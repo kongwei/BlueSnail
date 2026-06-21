@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlueSnail Agent</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">🐌</div>
+          <div>
+            <h1>BlueSnail</h1>
+            <p>AI Agent Framework</p>
+          </div>
+        </div>
+
+        <section class="panel llm-panel">
+          <button
+            type="button"
+            class="panel-toggle"
+            id="llmPanelToggle"
+            aria-expanded="false"
+          >
+            <div class="panel-toggle-main">
+              <h2>LLM 配置</h2>
+              <span id="llmSummary" class="llm-summary">OpenAI 兼容 API</span>
+            </div>
+            <span class="chevron" id="llmPanelChevron">▸</span>
+          </button>
+
+          <div id="llmPanelBody" class="panel-body collapsed">
+            <form id="llmConfigForm" class="llm-form">
+              <label class="field">
+                <span>Base URL</span>
+                <input
+                  id="llmBaseUrl"
+                  type="url"
+                  placeholder="https://api.openai.com/v1"
+                />
+              </label>
+              <label class="field">
+                <span>Model</span>
+                <input id="llmModel" type="text" placeholder="gpt-4o-mini" />
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input
+                  id="llmApiKey"
+                  type="password"
+                  placeholder="留空则保持已保存的 Key"
+                  autocomplete="off"
+                />
+                <small id="llmApiKeyHint" class="field-hint"></small>
+              </label>
+              <label class="field">
+                <span>Timeout (秒)</span>
+                <input id="llmTimeout" type="number" min="1" max="600" value="60" />
+              </label>
+              <label class="field">
+                <span>System Prompt</span>
+                <textarea id="llmSystemPrompt" rows="3"></textarea>
+              </label>
+              <div class="btn-row">
+                <button id="saveLlmBtn" class="btn primary" type="submit">保存并应用</button>
+                <button id="testLlmBtn" class="btn secondary" type="button">测试连接</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>会话</h2>
+          <button id="clearBtn" class="btn secondary" type="button">清空对话</button>
+          <p class="hint">请先配置 LLM 后再开始对话。</p>
+        </section>
+
+        <section class="panel">
+          <h2>已注册工具</h2>
+          <ul id="toolsList" class="tools-list"></ul>
+        </section>
+
+        <section class="panel">
+          <h2>添加记忆</h2>
+          <form id="rememberForm" class="remember-form">
+            <input id="rememberKey" type="text" placeholder="键名，例如 user_pref" required />
+            <textarea
+              id="rememberContent"
+              rows="3"
+              placeholder="记忆内容"
+              required
+            ></textarea>
+            <button class="btn secondary" type="submit">保存记忆</button>
+          </form>
+        </section>
+      </aside>
+
+      <main class="main-area">
+        <section class="chat">
+        <header class="chat-header">
+          <div>
+            <h2>Agent 对话</h2>
+            <span id="statusText" class="status">就绪</span>
+            <span id="llmMeta" class="status"></span>
+          </div>
+          <div class="header-actions">
+            <button id="toggleReasoningBtn" class="btn secondary" type="button">
+              推理过程
+            </button>
+            <div id="metaInfo" class="meta"></div>
+          </div>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <form id="chatForm" class="composer">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="输入消息，按 Enter 发送，Shift+Enter 换行..."
+            required
+          ></textarea>
+          <button id="sendBtn" class="btn primary" type="submit">发送</button>
+        </form>
+        </section>
+
+        <aside id="reasoningPanel" class="reasoning-panel hidden">
+          <div class="reasoning-header">
+            <h2>LLM 推理过程</h2>
+            <button id="closeReasoningBtn" class="btn secondary" type="button">关闭</button>
+          </div>
+          <div id="reasoningHistory" class="reasoning-history"></div>
+          <div id="reasoningContent" class="reasoning-content">
+            <div class="reasoning-empty">发送消息后，可在此查看 Agent 的逐步推理过程。</div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="avatar"></div>
+        <div class="bubble">
+          <div class="role"></div>
+          <div class="content"></div>
+          <button class="view-reasoning hidden" type="button">查看推理过程</button>
+          <details class="details hidden">
+            <summary>工具详情</summary>
+            <pre class="tool-detail"></pre>
+          </details>
+        </div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
