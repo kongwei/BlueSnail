@@ -8,28 +8,24 @@ from bluesnail.agent import (
     ContextConfig,
     MockLLMProvider,
     SchedulerConfig,
-    ToolManager,
 )
+from bluesnail.skills import create_default_skills
 
 
 def main() -> None:
-    tools = ToolManager()
-
-    @tools.tool(description="Return current weather for a city")
-    def get_weather(city: str) -> dict[str, str]:
-        return {"city": city, "weather": "sunny", "temperature": "26C"}
+    skills = create_default_skills()
 
     llm = MockLLMProvider(default_content="Hello from BlueSnail!")
     llm.queue_tool_call(
         "call_demo_1",
-        "get_weather",
+        "get-weather",
         {"city": "Shanghai"},
         then_content="Shanghai is sunny today, 26C.",
     )
 
     agent = Agent(
         llm=llm,
-        tools=tools,
+        skills=skills,
         config=AgentConfig(
             system_prompt="You are BlueSnail, a helpful assistant.",
             scheduler=SchedulerConfig(max_iterations=5, auto_recall=True),
@@ -43,7 +39,7 @@ def main() -> None:
     print("Answer:", result.answer)
     print("Iterations:", result.iterations)
     print("Stopped:", result.stopped_reason)
-    print("Tool steps:", sum(1 for step in result.steps if step.tool_results))
+    print("Skill steps:", sum(1 for step in result.steps if step.skill_results))
 
 
 if __name__ == "__main__":

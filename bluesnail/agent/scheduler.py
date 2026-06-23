@@ -11,6 +11,7 @@ from bluesnail.agent.context import ContextManager
 from bluesnail.agent.exceptions import SchedulerError
 from bluesnail.agent.llm import LLMProvider
 from bluesnail.agent.memory import MemoryProcessor
+from bluesnail.agent.skills import SkillManager
 from bluesnail.agent.tools import ToolManager
 from bluesnail.agent.types import (
     AgentResult,
@@ -18,6 +19,8 @@ from bluesnail.agent.types import (
     LLMResponse,
     Message,
     Role,
+    SkillResult,
+    ToolCall,
     ToolResult,
 )
 
@@ -41,6 +44,7 @@ class Scheduler:
     memory: MemoryProcessor
     tools: ToolManager
     context: ContextManager
+    skills: SkillManager | None = None
     config: SchedulerConfig = field(default_factory=SchedulerConfig)
     on_step: StepHook | None = None
     on_complete: RunHook | None = None
@@ -66,12 +70,16 @@ class Scheduler:
                 top_k=self.config.recall_top_k,
             )
 
+        skill_context = ""
+        if self.skills:
+            skill_context = self.skills.build_context()
+
         working_messages = self.memory.store.get_messages()
         window = self.context.build(
             system_prompt=system_prompt,
             messages=working_messages,
             recall_context=recall_context,
-            extra_context=extra_context,
+            extra_context=_join_context(extra_context, skill_context),
         )
         llm_messages = self.context.to_llm_messages(window)
 
@@ -81,6 +89,7 @@ class Scheduler:
         run_context = {
             "system_prompt": system_prompt,
             "recall_context": recall_context,
+            "skill_context": skill_context,
             "extra_context": extra_context,
             "initial_input_count": len(llm_messages),
         }
@@ -89,7 +98,7 @@ class Scheduler:
             step_input = list(llm_messages)
             response = self.llm.chat(
                 llm_messages,
-                tools=self.tools.schemas() or None,
+                tools=self._available_schemas(),
             )
             step = AgentStep(
                 iteration=iteration,
@@ -97,6 +106,7 @@ class Scheduler:
                 input_messages=step_input,
             )
             tool_results: list[ToolResult] = []
+            skill_results: list[SkillResult] = []
 
             if response.tool_calls:
                 assistant_message = Message(
@@ -116,15 +126,17 @@ class Scheduler:
                 self.memory.store.add_message(assistant_message)
                 llm_messages.append(assistant_message)
 
-                tool_results = self.tools.run_many(response.tool_calls)
+                tool_results, skill_results = self._execute_calls(response.tool_calls)
                 step.tool_results = tool_results
+                step.skill_results = skill_results
 
-                for result in tool_results:
+                for result in _merge_call_results(tool_results, skill_results):
                     tool_message = Message(
                         role=Role.TOOL,
                         content=result.content,
                         name=result.name,
-                        tool_call_id=result.tool_call_id,
+                        tool_call_id=result.call_id,
+                        metadata={"kind": result.kind},
                     )
                     self.memory.store.add_message(tool_message)
                     llm_messages.append(tool_message)
@@ -172,11 +184,68 @@ class Scheduler:
 
         return result
 
+    def _available_schemas(self) -> list[dict[str, Any]] | None:
+        schemas = self.tools.schemas()
+        if self.skills:
+            schemas.extend(self.skills.schemas())
+        return schemas or None
+
+    def _execute_calls(
+        self,
+        tool_calls: list[ToolCall],
+    ) -> tuple[list[ToolResult], list[SkillResult]]:
+        tool_results: list[ToolResult] = []
+        skill_results: list[SkillResult] = []
+        for call in tool_calls:
+            if self.skills and self.skills.has(call.name):
+                skill_results.append(self.skills.run(call))
+            else:
+                tool_results.append(self.tools.run(call))
+        return tool_results, skill_results
+
     def _fallback_answer(self, steps: list[AgentStep]) -> str:
         for step in reversed(steps):
             if step.response.content:
                 return step.response.content.strip()
         return "Unable to produce a final answer."
+
+
+@dataclass(slots=True)
+class _UnifiedCallResult:
+    call_id: str
+    name: str
+    content: str
+    kind: str
+
+
+def _merge_call_results(
+    tool_results: list[ToolResult],
+    skill_results: list[SkillResult],
+) -> list[_UnifiedCallResult]:
+    merged: list[_UnifiedCallResult] = []
+    for result in tool_results:
+        merged.append(
+            _UnifiedCallResult(
+                call_id=result.tool_call_id,
+                name=result.name,
+                content=result.content,
+                kind="tool",
+            )
+        )
+    for result in skill_results:
+        merged.append(
+            _UnifiedCallResult(
+                call_id=result.skill_call_id,
+                name=result.name,
+                content=result.content,
+                kind="skill",
+            )
+        )
+    return merged
+
+
+def _join_context(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
 
 
 def new_tool_call_id() -> str:

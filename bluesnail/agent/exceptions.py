@@ -19,3 +19,7 @@ class ContextOverflowError(AgentError):
 
 class SchedulerError(AgentError):
     """Raised when the scheduler encounters an unrecoverable error."""
+
+
+class SkillNotFoundError(AgentError):
+    """Raised when a requested skill is not registered."""

@@ -49,6 +49,14 @@ class ToolResult:
 
 
 @dataclass(slots=True)
+class SkillResult:
+    skill_call_id: str
+    name: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass(slots=True)
 class LLMResponse:
     content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
@@ -61,6 +69,7 @@ class AgentStep:
     iteration: int
     response: LLMResponse
     tool_results: list[ToolResult] = field(default_factory=list)
+    skill_results: list[SkillResult] = field(default_factory=list)
     input_messages: list[Message] = field(default_factory=list)
 
 

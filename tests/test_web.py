@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 from bluesnail.agent import Agent, AgentConfig, MockLLMProvider
 from bluesnail.agent.providers.openai_compatible import OpenAICompatibleProvider
 from bluesnail.agent.types import LLMResponse
-from bluesnail.web.app import create_app, create_default_tools
+from bluesnail.skills import create_default_skills
+from bluesnail.web.app import create_app
 from bluesnail.web.llm_config import LLMConfig
 
 
@@ -18,7 +19,7 @@ def build_test_agent() -> tuple[Agent, LLMConfig]:
     llm = MockLLMProvider(default_content="你好，我是助手。")
     llm.queue_tool_call(
         "call_1",
-        "get_weather",
+        "get-weather",
         {"city": "上海"},
         then_content="上海今天天气晴朗，气温约 26°C。",
     )
@@ -29,7 +30,7 @@ def build_test_agent() -> tuple[Agent, LLMConfig]:
     )
     agent = Agent(
         llm=llm,
-        tools=create_default_tools(),
+        skills=create_default_skills(),
         config=AgentConfig(system_prompt=config.system_prompt),
     )
     return agent, config
@@ -53,7 +54,14 @@ def test_index(client: TestClient) -> None:
     assert response.status_code == 200
     assert "BlueSnail" in response.text
     assert "LLM 配置" in response.text
-    assert "panel-toggle" in response.text
+    assert "Skills" in response.text
+
+
+def test_list_skills(client: TestClient) -> None:
+    response = client.get("/api/skills")
+    assert response.status_code == 200
+    data = response.json()
+    assert any(skill["name"] == "get-weather" for skill in data["skills"])
 
 
 def test_get_llm_config(client: TestClient) -> None:
@@ -120,12 +128,12 @@ def test_chat(client: TestClient) -> None:
     assert data["iterations"] >= 1
 
 
-def test_chat_with_tool(client: TestClient) -> None:
+def test_chat_with_skill(client: TestClient) -> None:
     response = client.post("/api/chat", json={"message": "上海天气怎么样？"})
     assert response.status_code == 200
     data = response.json()
     assert "26" in data["answer"] or "天气" in data["answer"]
-    assert any(step["tool_results"] for step in data["steps"])
+    assert any(step["skill_results"] for step in data["steps"])
     assert data["reasoning"]["steps"]
     assert data["reasoning"]["steps"][0]["input_messages"]
 
@@ -136,6 +144,7 @@ def test_chat_reasoning_contains_context(client: TestClient) -> None:
     data = response.json()
     reasoning = data["reasoning"]
     assert reasoning["run_context"]["system_prompt"]
+    assert reasoning["run_context"]["skill_context"]
     assert reasoning["steps"][0]["input_messages"]
 
 

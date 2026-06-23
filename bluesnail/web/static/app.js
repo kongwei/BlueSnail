@@ -4,6 +4,7 @@ const messageInput = document.getElementById("messageInput");
 const sendBtn = document.getElementById("sendBtn");
 const clearBtn = document.getElementById("clearBtn");
 const toolsList = document.getElementById("toolsList");
+const skillsList = document.getElementById("skillsList");
 const rememberForm = document.getElementById("rememberForm");
 const rememberKey = document.getElementById("rememberKey");
 const rememberContent = document.getElementById("rememberContent");
@@ -38,7 +39,7 @@ init();
 
 async function init() {
   renderEmptyState();
-  await Promise.all([loadTools(), loadHistory(), loadLlmConfig()]);
+  await Promise.all([loadTools(), loadSkills(), loadHistory(), loadLlmConfig()]);
   llmPanelToggle.addEventListener("click", toggleLlmPanel);
   llmConfigForm.addEventListener("submit", saveLlmConfig);
   testLlmBtn.addEventListener("click", testLlmConfig);
@@ -155,6 +156,35 @@ async function testLlmConfig() {
   } finally {
     testLlmBtn.disabled = false;
     testLlmBtn.textContent = "测试连接";
+  }
+}
+
+async function loadSkills() {
+  try {
+    const response = await fetch("/api/skills");
+    const data = await response.json();
+    skillsList.innerHTML = "";
+
+    if (!data.skills?.length) {
+      skillsList.innerHTML = "<li><span>暂无 Skill</span></li>";
+      return;
+    }
+
+    for (const skill of data.skills) {
+      const item = document.createElement("li");
+      item.innerHTML = `
+        <strong>${escapeHtml(skill.name)}</strong>
+        <span>${escapeHtml(skill.description || "")}</span>
+        ${
+          skill.skill_dir
+            ? `<span>${escapeHtml(skill.skill_dir)}</span>`
+            : ""
+        }
+      `;
+      skillsList.appendChild(item);
+    }
+  } catch (error) {
+    showToast(`加载 Skills 失败：${error.message}`, true);
   }
 }
 
@@ -287,6 +317,14 @@ function appendAssistantResult(data, traceId = null) {
   appendMessage({ role: "assistant", content: data.answer }, traceId);
 
   for (const step of data.steps || []) {
+    for (const result of step.skill_results || []) {
+      appendMessage({
+        role: "tool",
+        name: `skill:${result.name}`,
+        content: result.content,
+        metadata: { is_error: result.is_error, kind: "skill" },
+      });
+    }
     for (const result of step.tool_results || []) {
       appendMessage({
         role: "tool",
@@ -392,12 +430,16 @@ function renderReasoningContent(trace) {
 }
 
 function renderReasoningStep(step) {
-  const tagClass = step.tool_calls?.length
+  const tagClass = step.skill_results?.length
+    ? "tool"
+    : step.tool_calls?.length
     ? "tool"
     : step.finish_reason === "stop"
       ? "done"
       : "";
-  const tagText = step.tool_calls?.length
+  const tagText = step.skill_results?.length
+    ? "skill"
+    : step.tool_calls?.length
     ? "tool_calls"
     : step.finish_reason || "response";
 
@@ -426,6 +468,13 @@ function renderReasoningStep(step) {
         step.tool_calls?.length
           ? `<div class="reasoning-meta-label">工具调用</div>
              <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.tool_calls, null, 2))}</pre>`
+          : ""
+      }
+
+      ${
+        step.skill_results?.length
+          ? `<div class="reasoning-meta-label">Skill 调用</div>
+             <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.skill_results, null, 2))}</pre>`
           : ""
       }
 

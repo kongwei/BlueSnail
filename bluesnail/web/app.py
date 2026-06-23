@@ -137,6 +137,12 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
         ]
         return {"tools": tools}
 
+    @app.get("/api/skills")
+    async def list_skills() -> dict[str, Any]:
+        current = _get_agent(app)
+        skills = [skill.to_dict() for skill in current.skills.list_skills()]
+        return {"skills": skills}
+
     @app.get("/api/history")
     async def history() -> dict[str, Any]:
         current = _get_agent(app)
@@ -212,6 +218,15 @@ def _serialize_step(step) -> dict[str, Any]:
             }
             for item in step.tool_results
         ],
+        "skill_results": [
+            {
+                "skill_call_id": item.skill_call_id,
+                "name": item.name,
+                "content": item.content,
+                "is_error": item.is_error,
+            }
+            for item in step.skill_results
+        ],
         "input_messages": [
             _serialize_message(message) for message in step.input_messages
         ],
@@ -244,34 +259,13 @@ def _serialize_result(result: AgentResult) -> ChatResponse:
     )
 
 
-def create_default_tools() -> ToolManager:
-    tools = ToolManager()
-
-    @tools.tool(description="Return current weather for a city")
-    def get_weather(city: str) -> dict[str, str]:
-        weather_map = {
-            "上海": "sunny",
-            "Shanghai": "sunny",
-            "北京": "cloudy",
-            "Beijing": "cloudy",
-            "深圳": "rainy",
-            "Shenzhen": "rainy",
-        }
-        condition = weather_map.get(city, "sunny")
-        return {
-            "city": city,
-            "weather": condition,
-            "temperature": "26C",
-        }
-
-    return tools
-
-
 def build_default_agent(llm_config: LLMConfig | None = None) -> Agent:
+    from bluesnail.skills import create_default_skills
+
     config = llm_config or load_config()
     agent = Agent(
         llm=create_llm_provider(config),
-        tools=create_default_tools(),
+        skills=create_default_skills(),
         config=AgentConfig(system_prompt=config.system_prompt),
     )
     agent.remember("webui_hint", "WebUI prefers concise Chinese answers.")
