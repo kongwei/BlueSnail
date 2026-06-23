@@ -460,7 +460,7 @@ function renderReasoningStep(step) {
       ${
         step.content
           ? `<div class="reasoning-meta-label">LLM 输出</div>
-             <pre class="reasoning-pre">${escapeHtml(step.content)}</pre>`
+             <div class="markdown-body reasoning-markdown">${BlueSnailMarkdown.renderMarkdown(step.content)}</div>`
           : ""
       }
 
@@ -526,7 +526,7 @@ function appendMessage(message, traceId = null) {
   const role = message.role || "assistant";
   article.classList.add(role);
   roleEl.textContent = roleLabel(role, message.name);
-  contentEl.textContent = message.content || "";
+  renderMessageContent(contentEl, message);
 
   if (traceId && role === "assistant") {
     viewReasoningBtn.classList.remove("hidden");
@@ -539,11 +539,29 @@ function appendMessage(message, traceId = null) {
   }
 
   if (message.metadata?.is_error) {
-    contentEl.style.color = "#ffb4ae";
+    contentEl.classList.add("content-error");
   }
 
   messagesEl.appendChild(node);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function renderMessageContent(contentEl, message) {
+  const role = message.role || "assistant";
+  const content = message.content || "";
+  contentEl.classList.add("markdown-body");
+
+  if (role === "tool") {
+    contentEl.innerHTML = BlueSnailMarkdown.renderToolContent(content);
+    return;
+  }
+
+  if (role === "user") {
+    contentEl.innerHTML = BlueSnailMarkdown.renderMarkdown(content);
+    return;
+  }
+
+  contentEl.innerHTML = BlueSnailMarkdown.renderMarkdown(content);
 }
 
 function roleLabel(role, name) {
