@@ -9,6 +9,12 @@
   </head>
   <body>
     <div class="app">
+      <button
+        id="sidebarBackdrop"
+        class="sidebar-backdrop"
+        type="button"
+        aria-label="关闭侧边栏"
+      ></button>
       <aside class="sidebar">
         <div class="brand">
           <div class="logo">🐌</div>
@@ -106,10 +112,20 @@
       <main class="main-area">
         <section class="chat">
         <header class="chat-header">
-          <div>
-            <h2>Agent 对话</h2>
-            <span id="statusText" class="status">就绪</span>
-            <span id="llmMeta" class="status"></span>
+          <div class="chat-header-main">
+            <button
+              id="toggleSidebarBtn"
+              class="btn secondary sidebar-toggle"
+              type="button"
+              aria-label="打开侧边栏"
+            >
+              ☰
+            </button>
+            <div>
+              <h2>Agent 对话</h2>
+              <span id="statusText" class="status">就绪</span>
+              <span id="llmMeta" class="status"></span>
+            </div>
           </div>
           <div class="header-actions">
             <button id="toggleReasoningBtn" class="btn secondary" type="button">

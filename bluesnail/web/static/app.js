@@ -29,6 +29,9 @@ const reasoningPanel = document.getElementById("reasoningPanel");
 const reasoningContent = document.getElementById("reasoningContent");
 const reasoningHistory = document.getElementById("reasoningHistory");
 const mainArea = document.querySelector(".main-area");
+const appEl = document.querySelector(".app");
+const toggleSidebarBtn = document.getElementById("toggleSidebarBtn");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
 
 const sessionId = `web-${Date.now()}`;
 let loading = false;
@@ -45,6 +48,8 @@ async function init() {
   testLlmBtn.addEventListener("click", testLlmConfig);
   toggleReasoningBtn.addEventListener("click", () => setReasoningPanelVisible(true));
   closeReasoningBtn.addEventListener("click", () => setReasoningPanelVisible(false));
+  toggleSidebarBtn.addEventListener("click", () => setSidebarOpen(true));
+  sidebarBackdrop.addEventListener("click", () => setSidebarOpen(false));
 }
 
 function renderEmptyState() {
@@ -236,6 +241,7 @@ chatForm.addEventListener("submit", async (event) => {
 
   appendMessage({ role: "user", content: text });
   messageInput.value = "";
+  setSidebarOpen(false);
   setLoading(true);
 
   try {
@@ -357,6 +363,12 @@ function storeReasoningTrace(userInput, reasoning) {
 function setReasoningPanelVisible(visible) {
   reasoningPanel.classList.toggle("hidden", !visible);
   mainArea.classList.toggle("show-reasoning", visible);
+}
+
+function setSidebarOpen(open) {
+  appEl.classList.toggle("sidebar-open", open);
+  toggleSidebarBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  toggleSidebarBtn.setAttribute("aria-label", open ? "关闭侧边栏" : "打开侧边栏");
 }
 
 function renderReasoningHistory() {
