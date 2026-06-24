@@ -55,6 +55,7 @@ def test_index(client: TestClient) -> None:
     assert "BlueSnail" in response.text
     assert "LLM 配置" in response.text
     assert "markdown.js" in response.text
+    assert "highlight.min.js" in response.text
     assert "Skills" in response.text
 
 
