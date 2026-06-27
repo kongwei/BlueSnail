@@ -261,10 +261,12 @@ def _serialize_result(result: AgentResult) -> ChatResponse:
 
 def build_default_agent(llm_config: LLMConfig | None = None) -> Agent:
     from bluesnail.skills import create_default_skills
+    from bluesnail.tools import create_default_tools
 
     config = llm_config or load_config()
     agent = Agent(
         llm=create_llm_provider(config),
+        tools=create_default_tools(),
         skills=create_default_skills(),
         config=AgentConfig(system_prompt=config.system_prompt),
     )
