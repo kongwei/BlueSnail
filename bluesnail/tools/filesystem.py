@@ -55,6 +55,36 @@ LIST_DIRECTORY_PARAMETERS = {
     "required": [],
 }
 
+DELETE_FILE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Relative path to the file within the workspace to delete",
+        },
+    },
+    "required": ["path"],
+}
+
+DELETE_LINES_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Relative path to the text file within the workspace",
+        },
+        "start": {
+            "type": "integer",
+            "description": "1-based start line number to delete",
+        },
+        "end": {
+            "type": "integer",
+            "description": "1-based end line number to delete (inclusive). If omitted, only the start line will be removed",
+        },
+    },
+    "required": ["path", "start"],
+}
+
 
 def resolve_workspace_root(workspace_root: Path | None = None) -> Path:
     if workspace_root is not None:
@@ -153,3 +183,65 @@ def register_filesystem_tools(
             kind = "dir" if entry.is_dir() else "file"
             lines.append(f"[{kind}] {entry.name}")
         return "\n".join(lines) if lines else "(empty directory)"
+
+    @manager.tool(
+        name="delete_file",
+        description="Delete a file from the workspace. Will error if path is not a file.",
+        parameters=DELETE_FILE_PARAMETERS,
+    )
+    def delete_file(path: str) -> str:
+        resolved = resolve_path(root, path)
+        if not resolved.exists():
+            raise ValueError(f"Path not found: {path}")
+        if resolved.is_dir():
+            raise ValueError(f"Not a file: {path}")
+        resolved.unlink()
+        return f"Deleted file: {path}"
+
+    @manager.tool(
+        name="delete_lines",
+        description="Delete a range of lines from a UTF-8 text file. start is 1-based; if end omitted only the start line is removed.",
+        parameters=DELETE_LINES_PARAMETERS,
+    )
+    def delete_lines(path: str, start: int, end: int | None = None) -> str:
+        resolved = resolve_path(root, path)
+        if not resolved.exists():
+            raise ValueError(f"Path not found: {path}")
+        if not resolved.is_file():
+            raise ValueError(f"Not a file: {path}")
+
+        size = resolved.stat().st_size
+        if size > MAX_READ_BYTES:
+            raise ValueError(
+                f"File too large ({size} bytes, max {MAX_READ_BYTES})"
+            )
+
+        try:
+            text = resolved.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"File is not valid UTF-8 text: {path}") from exc
+
+        lines = text.splitlines()
+        n = len(lines)
+        if start < 1 or start > n:
+            raise ValueError(f"start line {start} out of range (1-{n})")
+        if end is None:
+            end = start
+        if end < start:
+            raise ValueError("end must be >= start")
+        if end > n:
+            end = n
+
+        # Delete lines start..end (1-based, inclusive)
+        new_lines = lines[: start - 1] + lines[end:]
+        new_text = "\n".join(new_lines)
+        encoded = new_text.encode("utf-8")
+        if len(encoded) > MAX_WRITE_BYTES:
+            raise ValueError(
+                f"Resulting content too large ({len(encoded)} bytes, max {MAX_WRITE_BYTES})"
+            )
+
+        resolved.write_text(new_text, encoding="utf-8")
+        if start == end:
+            return f"Deleted line {start} from {path}"
+        return f"Deleted lines {start}-{end} from {path}"
