@@ -55,6 +55,28 @@ LIST_DIRECTORY_PARAMETERS = {
     "required": [],
 }
 
+DELETE_FILE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Relative path to the file within the workspace to delete",
+        },
+    },
+    "required": ["path"],
+}
+
+TRUNCATE_FILE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Relative path to the file within the workspace to clear contents",
+        },
+    },
+    "required": ["path"],
+}
+
 
 def resolve_workspace_root(workspace_root: Path | None = None) -> Path:
     if workspace_root is not None:
@@ -153,3 +175,32 @@ def register_filesystem_tools(
             kind = "dir" if entry.is_dir() else "file"
             lines.append(f"[{kind}] {entry.name}")
         return "\n".join(lines) if lines else "(empty directory)"
+
+    @manager.tool(
+        name="delete_file",
+        description="Delete a file from the workspace. Will error if path is not a file.",
+        parameters=DELETE_FILE_PARAMETERS,
+    )
+    def delete_file(path: str) -> str:
+        resolved = resolve_path(root, path)
+        if not resolved.exists():
+            raise ValueError(f"Path not found: {path}")
+        if resolved.is_dir():
+            raise ValueError(f"Not a file: {path}")
+        resolved.unlink()
+        return f"Deleted file: {path}"
+
+    @manager.tool(
+        name="clear_file",
+        description="Clear (truncate) the contents of a file in the workspace, leaving an empty file.",
+        parameters=TRUNCATE_FILE_PARAMETERS,
+    )
+    def clear_file(path: str) -> str:
+        resolved = resolve_path(root, path)
+        if not resolved.exists():
+            raise ValueError(f"Path not found: {path}")
+        if not resolved.is_file():
+            raise ValueError(f"Not a file: {path}")
+        # Overwrite with empty content
+        resolved.write_text("", encoding="utf-8")
+        return f"Cleared file contents: {path}"
