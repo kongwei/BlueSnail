@@ -122,6 +122,36 @@ def test_agent_run_with_skill():
     assert any(step.skill_results for step in result.steps)
 
 
+def test_agent_unknown_tool_returns_error_to_llm():
+    tools = ToolManager()
+
+    @tools.tool(description="Echo input")
+    def echo(text: str) -> str:
+        return text
+
+    llm = MockLLMProvider()
+    llm.queue_tool_call("call_1", "missing_tool", {"text": "x"}, then_content="已处理。")
+
+    agent = Agent(llm=llm, tools=tools)
+    result = agent.run("test")
+    assert result.answer == "已处理。"
+    assert result.steps[0].tool_results
+    assert result.steps[0].tool_results[0].is_error
+    assert "Tool not found" in result.steps[0].tool_results[0].content
+
+
+def test_agent_llm_failure_returns_message_instead_of_crashing():
+    class FailingLLM:
+        def chat(self, messages, tools=None):
+            raise RuntimeError("内部错误")
+
+    agent = Agent(llm=FailingLLM())
+    result = agent.run("hello")
+    assert "LLM 调用失败" in result.answer
+    assert "内部错误" in result.answer
+    assert result.stopped_reason == "llm_error"
+
+
 def test_agent_direct_response():
     llm = MockLLMProvider(responses=[LLMResponse(content="done", finish_reason="stop")])
     agent = Agent(llm=llm)

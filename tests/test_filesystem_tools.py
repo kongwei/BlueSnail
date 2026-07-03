@@ -7,7 +7,12 @@ import pytest
 from bluesnail.agent.tools import ToolManager
 from bluesnail.agent.types import ToolCall
 from bluesnail.tools import create_default_tools
-from bluesnail.tools.filesystem import register_filesystem_tools, resolve_path
+from bluesnail.tools.filesystem import (
+    get_workspace_root,
+    register_filesystem_tools,
+    resolve_path,
+    resolve_workspace_root,
+)
 
 
 @pytest.fixture
@@ -86,6 +91,12 @@ def test_list_directory(tools: ToolManager):
 def test_path_traversal_is_rejected(workspace: Path):
     with pytest.raises(ValueError, match="escapes workspace"):
         resolve_path(workspace, "../outside.txt")
+
+
+def test_resolve_workspace_root_from_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("BLUESNAIL_WORKSPACE", str(tmp_path))
+    assert resolve_workspace_root() == tmp_path.resolve()
+    assert get_workspace_root() == tmp_path.resolve()
 
 
 def test_read_missing_file_returns_error(tools: ToolManager):

@@ -47,31 +47,69 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(extract_api_error(exc.response)) from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"LLM request failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("LLM returned invalid JSON.") from exc
 
-        choice = data["choices"][0]
-        message = choice["message"]
-        tool_calls = [
-            ToolCall(
-                id=call["id"],
-                name=call["function"]["name"],
-                arguments=_parse_arguments(call["function"]["arguments"]),
-            )
-            for call in message.get("tool_calls") or []
-        ]
-        return LLMResponse(
-            content=message.get("content"),
-            tool_calls=tool_calls,
-            finish_reason=choice.get("finish_reason"),
-            raw=data,
+        return _parse_chat_response(data)
+
+
+def extract_api_error(response: httpx.Response) -> str:
+    """Extract a readable error message from an API error response."""
+    try:
+        body = response.json()
+    except json.JSONDecodeError:
+        text = response.text.strip()
+        if text:
+            return text
+        return f"LLM API HTTP {response.status_code}"
+
+    if isinstance(body, dict):
+        error = body.get("error", body)
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("msg") or error.get("detail")
+            if message:
+                return str(message)
+        message = body.get("message") or body.get("msg") or body.get("detail")
+        if message:
+            return str(message)
+    return f"LLM API HTTP {response.status_code}"
+
+
+def _parse_chat_response(data: dict[str, Any]) -> LLMResponse:
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("LLM returned no choices.")
+
+    choice = choices[0]
+    message = choice.get("message") or {}
+    tool_calls = [
+        ToolCall(
+            id=call.get("id") or "",
+            name=(call.get("function") or {}).get("name") or "",
+            arguments=_parse_arguments((call.get("function") or {}).get("arguments")),
         )
+        for call in message.get("tool_calls") or []
+        if (call.get("function") or {}).get("name")
+    ]
+    return LLMResponse(
+        content=message.get("content"),
+        tool_calls=tool_calls,
+        finish_reason=choice.get("finish_reason"),
+        raw=data,
+    )
 
 
 def _to_api_message(message: Message) -> dict[str, Any]:
@@ -108,4 +146,7 @@ def _parse_arguments(raw: Any) -> dict[str, Any]:
         return raw
     if not raw:
         return {}
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"_raw": raw}

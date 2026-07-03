@@ -69,8 +69,8 @@ class ToolExecutor:
         self.registry = registry
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
-        tool = self.registry.get(tool_call.name)
         try:
+            tool = self.registry.get(tool_call.name)
             result = tool.handler(**tool_call.arguments)
             content = _stringify_result(result)
             return ToolResult(
@@ -78,8 +78,20 @@ class ToolExecutor:
                 name=tool_call.name,
                 content=content,
             )
-        except ToolNotFoundError:
-            raise
+        except ToolNotFoundError as exc:
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=tool_call.name,
+                content=str(exc),
+                is_error=True,
+            )
+        except TypeError as exc:
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                name=tool_call.name,
+                content=f"Invalid tool arguments: {exc}",
+                is_error=True,
+            )
         except Exception as exc:
             return ToolResult(
                 tool_call_id=tool_call.id,

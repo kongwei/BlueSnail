@@ -87,12 +87,24 @@ DELETE_LINES_PARAMETERS = {
 
 
 def resolve_workspace_root(workspace_root: Path | None = None) -> Path:
+    """Resolve the filesystem workspace root.
+
+    Priority:
+    1. Explicit ``workspace_root`` argument
+    2. ``BLUESNAIL_WORKSPACE`` environment variable (set by WebUI startup)
+    3. Current working directory
+    """
     if workspace_root is not None:
         return workspace_root.resolve()
     env_root = os.getenv("BLUESNAIL_WORKSPACE", "").strip()
     if env_root:
-        return Path(env_root).resolve()
+        return Path(env_root).expanduser().resolve()
     return Path.cwd().resolve()
+
+
+def get_workspace_root() -> Path:
+    """Return the active filesystem workspace root."""
+    return resolve_workspace_root()
 
 
 def resolve_path(root: Path, user_path: str) -> Path:

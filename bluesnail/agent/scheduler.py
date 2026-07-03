@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from bluesnail.agent.context import ContextManager
-from bluesnail.agent.exceptions import SchedulerError
+from bluesnail.agent.exceptions import ContextOverflowError, SchedulerError
 from bluesnail.agent.llm import LLMProvider
 from bluesnail.agent.memory import MemoryProcessor
 from bluesnail.agent.skills import SkillManager
@@ -75,12 +75,15 @@ class Scheduler:
             skill_context = self.skills.build_context()
 
         working_messages = self.memory.store.get_messages()
-        window = self.context.build(
-            system_prompt=system_prompt,
-            messages=working_messages,
-            recall_context=recall_context,
-            extra_context=_join_context(extra_context, skill_context),
-        )
+        try:
+            window = self.context.build(
+                system_prompt=system_prompt,
+                messages=working_messages,
+                recall_context=recall_context,
+                extra_context=_join_context(extra_context, skill_context),
+            )
+        except ContextOverflowError as exc:
+            raise SchedulerError(str(exc)) from exc
         llm_messages = self.context.to_llm_messages(window)
 
         steps: list[AgentStep] = []
@@ -96,10 +99,22 @@ class Scheduler:
 
         for iteration in range(1, self.config.max_iterations + 1):
             step_input = list(llm_messages)
-            response = self.llm.chat(
-                llm_messages,
-                tools=self._available_schemas(),
-            )
+            try:
+                response = self.llm.chat(
+                    llm_messages,
+                    tools=self._available_schemas(),
+                )
+            except Exception as exc:
+                stopped_reason = "llm_error"
+                final_answer = f"LLM 调用失败：{exc}"
+                steps.append(
+                    AgentStep(
+                        iteration=iteration,
+                        response=LLMResponse(content=final_answer, finish_reason="error"),
+                        input_messages=step_input,
+                    )
+                )
+                break
             step = AgentStep(
                 iteration=iteration,
                 response=response,

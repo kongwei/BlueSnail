@@ -38,6 +38,45 @@ let loading = false;
 let reasoningTraces = [];
 let activeReasoningId = null;
 
+async function parseJsonResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return { detail: text || response.statusText || "请求失败" };
+  }
+}
+
+function formatApiError(detail, fallback = "请求失败") {
+  if (!detail) {
+    return fallback;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        if (item && typeof item === "object") {
+          return item.msg || item.message || JSON.stringify(item);
+        }
+        return String(item);
+      })
+      .join("; ");
+  }
+  if (typeof detail === "object" && detail.message) {
+    return String(detail.message);
+  }
+  return String(detail);
+}
+
 init();
 
 async function init() {
@@ -254,15 +293,19 @@ chatForm.addEventListener("submit", async (event) => {
       }),
     });
 
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     if (!response.ok) {
-      throw new Error(data.detail || "请求失败");
+      throw new Error(formatApiError(data.detail, "请求失败"));
     }
 
     const traceId = storeReasoningTrace(text, data.reasoning);
     appendAssistantResult(data, traceId);
     metaInfo.textContent = `迭代 ${data.iterations} 次 · 停止原因 ${data.stopped_reason}`;
-    statusText.textContent = "就绪";
+    if (data.stopped_reason === "llm_error") {
+      statusText.textContent = "LLM 出错";
+    } else {
+      statusText.textContent = "就绪";
+    }
   } catch (error) {
     statusText.textContent = "出错";
     showToast(error.message, true);
@@ -320,7 +363,15 @@ messageInput.addEventListener("keydown", (event) => {
 });
 
 function appendAssistantResult(data, traceId = null) {
-  appendMessage({ role: "assistant", content: data.answer }, traceId);
+  const isError = data.stopped_reason === "llm_error";
+  appendMessage(
+    {
+      role: "assistant",
+      content: data.answer,
+      metadata: isError ? { is_error: true } : {},
+    },
+    traceId
+  );
 
   for (const step of data.steps || []) {
     for (const result of step.skill_results || []) {

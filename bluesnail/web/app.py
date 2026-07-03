@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from bluesnail.agent import Agent, AgentConfig, ToolManager
+from bluesnail.agent.exceptions import AgentError
 from bluesnail.agent.types import AgentResult, Message, Role
 from bluesnail.web.llm_config import (
     LLMConfig,
@@ -78,7 +79,13 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "service": "bluesnail-web"}
+        from bluesnail.tools.filesystem import get_workspace_root
+
+        return {
+            "status": "ok",
+            "service": "bluesnail-web",
+            "filesystem_workspace": str(get_workspace_root()),
+        }
 
     @app.get("/api/llm/config")
     async def get_llm_config() -> dict[str, Any]:
@@ -158,8 +165,15 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
                 session_id=payload.session_id,
                 extra_context=payload.extra_context,
             )
+        except AgentError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=500,
+                detail=f"Agent 运行失败：{exc}",
+            ) from exc
         return _serialize_result(result)
 
     @app.post("/api/clear")

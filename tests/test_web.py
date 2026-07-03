@@ -46,7 +46,9 @@ def client() -> TestClient:
 def test_health(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "filesystem_workspace" in data
 
 
 def test_index(client: TestClient) -> None:

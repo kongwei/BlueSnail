@@ -106,8 +106,8 @@ class SkillExecutor:
         self.registry = registry
 
     def execute(self, call: ToolCall) -> SkillResult:
-        skill = self.registry.get(call.name)
         try:
+            skill = self.registry.get(call.name)
             result = skill.handler(**call.arguments)
             content = _stringify_result(result)
             return SkillResult(
@@ -115,8 +115,20 @@ class SkillExecutor:
                 name=call.name,
                 content=content,
             )
-        except SkillNotFoundError:
-            raise
+        except SkillNotFoundError as exc:
+            return SkillResult(
+                skill_call_id=call.id,
+                name=call.name,
+                content=str(exc),
+                is_error=True,
+            )
+        except TypeError as exc:
+            return SkillResult(
+                skill_call_id=call.id,
+                name=call.name,
+                content=f"Invalid skill arguments: {exc}",
+                is_error=True,
+            )
         except Exception as exc:
             return SkillResult(
                 skill_call_id=call.id,
