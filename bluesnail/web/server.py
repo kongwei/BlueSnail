@@ -26,6 +26,9 @@ def create_web_app():
 
 
 def main() -> None:
+    from colorama import just_fix_windows_console
+    just_fix_windows_console()
+
     parser = argparse.ArgumentParser(description="Run BlueSnail WebUI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
