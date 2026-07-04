@@ -85,6 +85,16 @@ DELETE_LINES_PARAMETERS = {
     "required": ["path", "start"],
 }
 
+DELETE_DIRECTORY_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "Relative path to the directory within the workspace to delete",
+        },
+    },
+    "required": ["path"],
+}
 
 def resolve_workspace_root(workspace_root: Path | None = None) -> Path:
     """Resolve the filesystem workspace root.
@@ -257,3 +267,19 @@ def register_filesystem_tools(
         if start == end:
             return f"Deleted line {start} from {path}"
         return f"Deleted lines {start}-{end} from {path}"
+
+    @manager.tool(
+        name="delete_directory",
+        description="Delete a directory from the workspace. Will error if path is not a directory. This function can handle directories with spaces in their names.",
+        parameters=DELETE_DIRECTORY_PARAMETERS,
+    )
+    def delete_directory(path: str) -> str:
+        resolved = resolve_path(root, path)
+        if not resolved.exists():
+            raise ValueError(f"Path not found: {path}")
+        if not resolved.is_dir():
+            raise ValueError(f"Not a directory: {path}")
+        # Delete directory and all its contents recursively
+        import shutil
+        shutil.rmtree(resolved)
+        return f"Deleted directory: {path}"
