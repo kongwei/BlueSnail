@@ -1,8 +1,7 @@
 """High-level Agent facade."""
-
 from __future__ import annotations
-
 from dataclasses import dataclass, field
+import os
 
 from bluesnail.agent.context import ContextConfig, ContextManager
 from bluesnail.agent.llm import LLMProvider
@@ -22,7 +21,6 @@ class AgentConfig:
 
 class Agent:
     """Main entry point that wires all modules together."""
-
     def __init__(
         self,
         llm: LLMProvider,
@@ -33,6 +31,28 @@ class Agent:
         skills: SkillManager | None = None,
         context: ContextManager | None = None,
     ) -> None:
+        # Read PROJECT.md if it exists and merge with system prompt
+        project_path = ".agent/PROJECT.md"
+        if os.path.exists(project_path):
+            with open(project_path, "r", encoding="utf-8") as f:
+                project_content = f.read().strip()
+            
+            # If config is provided and has a system_prompt, use it as base
+            # Otherwise use default
+            base_prompt = config.system_prompt if config and config.system_prompt else "You are a helpful AI assistant."
+            
+            # Combine project content with base prompt
+            if project_content:
+                combined_prompt = f"{base_prompt}\n\n---\n\nProject Background:\n{project_content}"
+            else:
+                combined_prompt = base_prompt
+            
+            # Update config with combined prompt
+            if config:
+                config.system_prompt = combined_prompt
+            else:
+                config = AgentConfig(system_prompt=combined_prompt)
+        
         self.config = config or AgentConfig()
         self.memory = memory or MemoryProcessor(InMemoryStore())
         self.tools = tools or ToolManager()
