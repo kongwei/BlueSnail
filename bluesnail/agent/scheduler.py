@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -99,14 +100,24 @@ class Scheduler:
 
         for iteration in range(1, self.config.max_iterations + 1):
             step_input = list(llm_messages)
-            try:
-                response = self.llm.chat(
-                    llm_messages,
-                    tools=self._available_schemas(),
-                )
-            except Exception as exc:
+            response = None
+            llm_error = None
+            for attempt in range(3):
+                try:
+                    response = self.llm.chat(
+                        llm_messages,
+                        tools=self._available_schemas(),
+                    )
+                    llm_error = None
+                    break
+                except Exception as exc:
+                    llm_error = exc
+                    print(str(exc))
+                    if attempt < 2:
+                        time.sleep(10)
+            if llm_error is not None:
                 stopped_reason = "llm_error"
-                final_answer = f"LLM 调用失败：{exc}"
+                final_answer = f"LLM 调用失败：{llm_error}"
                 steps.append(
                     AgentStep(
                         iteration=iteration,
