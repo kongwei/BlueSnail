@@ -487,7 +487,7 @@ function renderReasoningContent(trace) {
     </div>
     <div class="reasoning-block">
       <h3>逐步推理</h3>
-      ${steps.length ? steps.map(renderReasoningStep).join("") : '<div class="reasoning-empty">本次回复没有额外推理步骤。</div>'}
+      ${steps.length ? steps.map((step) => renderReasoningStep(step)).join("") : '<div class="reasoning-empty">本次回复没有额外推理步骤。</div>'}
     </div>
   `;
 }
@@ -506,58 +506,47 @@ function renderReasoningStep(step) {
     ? "tool_calls"
     : step.finish_reason || "response";
 
+  const bodyParts = [];
+
+  if (step.content) {
+    bodyParts.push(
+      `<div class="reasoning-meta-label">LLM 输出</div>
+       <div class="markdown-body reasoning-markdown">${BlueSnailMarkdown.renderMarkdown(step.content)}</div>`
+    );
+  }
+
+  if (step.tool_calls?.length) {
+    bodyParts.push(
+      `<div class="reasoning-meta-label">工具调用</div>
+       <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.tool_calls, null, 2))}</pre>`
+    );
+  }
+
+  if (step.skill_results?.length) {
+    bodyParts.push(
+      `<div class="reasoning-meta-label">Skill 结果</div>
+       <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.skill_results, null, 2))}</pre>`
+    );
+  }
+
+  if (step.tool_results?.length) {
+    bodyParts.push(
+      `<div class="reasoning-meta-label">工具结果</div>
+       <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.tool_results, null, 2))}</pre>`
+    );
+  }
+
+  if (!bodyParts.length) {
+    bodyParts.push('<div class="reasoning-empty">本 Step 无新增输出</div>');
+  }
+
   return `
     <div class="reasoning-step">
       <div class="reasoning-step-head">
         <div class="reasoning-step-title">Step ${step.iteration}</div>
         <span class="reasoning-tag ${tagClass}">${escapeHtml(tagText)}</span>
       </div>
-
-      <div class="reasoning-meta-label">LLM 输入上下文</div>
-      ${
-        step.input_messages?.length
-          ? step.input_messages.map(renderReasoningInputMessage).join("")
-          : '<div class="reasoning-empty">无输入消息</div>'
-      }
-
-      ${
-        step.content
-          ? `<div class="reasoning-meta-label">LLM 输出</div>
-             <div class="markdown-body reasoning-markdown">${BlueSnailMarkdown.renderMarkdown(step.content)}</div>`
-          : ""
-      }
-
-      ${
-        step.tool_calls?.length
-          ? `<div class="reasoning-meta-label">工具调用</div>
-             <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.tool_calls, null, 2))}</pre>`
-          : ""
-      }
-
-      ${
-        step.skill_results?.length
-          ? `<div class="reasoning-meta-label">Skill 调用</div>
-             <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.skill_results, null, 2))}</pre>`
-          : ""
-      }
-
-      ${
-        step.tool_results?.length
-          ? `<div class="reasoning-meta-label">工具结果</div>
-             <pre class="reasoning-pre">${escapeHtml(JSON.stringify(step.tool_results, null, 2))}</pre>`
-          : ""
-      }
-    </div>
-  `;
-}
-
-function renderReasoningInputMessage(message) {
-  return `
-    <div class="reasoning-message">
-      <div class="reasoning-message-role">${escapeHtml(message.role)}${
-        message.name ? ` · ${escapeHtml(message.name)}` : ""
-      }</div>
-      <div>${escapeHtml(truncateText(message.content, 1200))}</div>
+      ${bodyParts.join("")}
     </div>
   `;
 }
