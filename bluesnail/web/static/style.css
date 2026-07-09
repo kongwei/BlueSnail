@@ -419,6 +419,15 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.reasoning-meta-item.hidden {
+  display: none;
+}
+
+.reasoning-steps-live {
+  display: grid;
+  gap: 0;
+}
+
 .reasoning-meta-label {
   display: block;
   margin-bottom: 4px;

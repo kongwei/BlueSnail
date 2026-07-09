@@ -73,12 +73,18 @@ class Agent:
         *,
         session_id: str | None = None,
         extra_context: str = "",
+        on_run_start=None,
+        on_step=None,
+        on_complete=None,
     ) -> AgentResult:
         return self.scheduler.run(
             user_input,
             system_prompt=self.config.system_prompt,
             session_id=session_id,
             extra_context=extra_context,
+            on_run_start=on_run_start,
+            on_step=on_step,
+            on_complete=on_complete,
         )
 
     def remember(self, key: str, content: str, metadata: dict | None = None) -> None:

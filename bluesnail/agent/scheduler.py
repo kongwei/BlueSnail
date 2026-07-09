@@ -35,6 +35,7 @@ class SchedulerConfig:
 
 StepHook = Callable[[AgentStep], None]
 RunHook = Callable[[AgentResult], None]
+RunStartHook = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -49,6 +50,7 @@ class Scheduler:
     config: SchedulerConfig = field(default_factory=SchedulerConfig)
     on_step: StepHook | None = None
     on_complete: RunHook | None = None
+    on_run_start: RunStartHook | None = None
 
     def run(
         self,
@@ -57,9 +59,16 @@ class Scheduler:
         system_prompt: str = "You are a helpful AI assistant.",
         session_id: str | None = None,
         extra_context: str = "",
+        on_run_start: RunStartHook | None = None,
+        on_step: StepHook | None = None,
+        on_complete: RunHook | None = None,
     ) -> AgentResult:
         if not user_input.strip():
             raise SchedulerError("User input cannot be empty.")
+
+        step_hook = on_step if on_step is not None else self.on_step
+        complete_hook = on_complete if on_complete is not None else self.on_complete
+        run_start_hook = on_run_start if on_run_start is not None else self.on_run_start
 
         user_message = Message(role=Role.USER, content=user_input.strip())
         self.memory.store.add_message(user_message)
@@ -98,6 +107,9 @@ class Scheduler:
             "initial_input_count": len(llm_messages),
         }
 
+        if run_start_hook:
+            run_start_hook(run_context)
+
         for iteration in range(1, self.config.max_iterations + 1):
             step_input = list(llm_messages)
             response = None
@@ -118,13 +130,14 @@ class Scheduler:
             if llm_error is not None:
                 stopped_reason = "llm_error"
                 final_answer = f"LLM 调用失败：{llm_error}"
-                steps.append(
-                    AgentStep(
-                        iteration=iteration,
-                        response=LLMResponse(content=final_answer, finish_reason="error"),
-                        input_messages=step_input,
-                    )
+                error_step = AgentStep(
+                    iteration=iteration,
+                    response=LLMResponse(content=final_answer, finish_reason="error"),
+                    input_messages=step_input,
                 )
+                steps.append(error_step)
+                if step_hook:
+                    step_hook(error_step)
                 break
             step = AgentStep(
                 iteration=iteration,
@@ -135,6 +148,9 @@ class Scheduler:
             skill_results: list[SkillResult] = []
 
             if response.tool_calls:
+                if step_hook:
+                    step_hook(step)
+
                 assistant_message = Message(
                     role=Role.ASSISTANT,
                     content=response.content or "",
@@ -168,8 +184,8 @@ class Scheduler:
                     llm_messages.append(tool_message)
 
                 steps.append(step)
-                if self.on_step:
-                    self.on_step(step)
+                if step_hook:
+                    step_hook(step)
                 continue
 
             if response.content:
@@ -177,8 +193,8 @@ class Scheduler:
                 assistant_message = Message(role=Role.ASSISTANT, content=final_answer)
                 self.memory.store.add_message(assistant_message)
                 steps.append(step)
-                if self.on_step:
-                    self.on_step(step)
+                if step_hook:
+                    step_hook(step)
                 break
 
             stopped_reason = "empty_response"
@@ -205,8 +221,8 @@ class Scheduler:
                 metadata={"session_id": session_id},
             )
 
-        if self.on_complete:
-            self.on_complete(result)
+        if complete_hook:
+            complete_hook(result)
 
         return result
 

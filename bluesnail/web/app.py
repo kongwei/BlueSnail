@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -176,6 +179,71 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
             ) from exc
         return _serialize_result(result)
 
+    @app.post("/api/chat/stream")
+    async def chat_stream(payload: ChatRequest) -> StreamingResponse:
+        current = _get_agent(app)
+
+        async def event_generator() -> AsyncIterator[str]:
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+            def emit(event_type: str, data: Any) -> None:
+                loop.call_soon_threadsafe(queue.put_nowait, (event_type, data))
+
+            def run_agent() -> None:
+                try:
+                    current.run(
+                        payload.message.strip(),
+                        session_id=payload.session_id,
+                        extra_context=payload.extra_context,
+                        on_run_start=lambda ctx: emit(
+                            "start",
+                            {
+                                "run_context": ctx,
+                                "user_input": payload.message.strip(),
+                            },
+                        ),
+                        on_step=lambda step: emit("step", _serialize_step(step)),
+                        on_complete=lambda result: emit(
+                            "done",
+                            _chat_response_to_dict(_serialize_result(result)),
+                        ),
+                    )
+                except AgentError as exc:
+                    emit("error", {"detail": str(exc), "status_code": 400})
+                except ValueError as exc:
+                    emit("error", {"detail": str(exc), "status_code": 400})
+                except Exception as exc:
+                    emit(
+                        "error",
+                        {
+                            "detail": f"Agent 运行失败：{exc}",
+                            "status_code": 500,
+                        },
+                    )
+                finally:
+                    emit("_end", None)
+
+            worker = loop.run_in_executor(None, run_agent)
+
+            while True:
+                event_type, data = await queue.get()
+                if event_type == "_end":
+                    break
+                yield _format_sse(event_type, data)
+
+            await worker
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     @app.post("/api/clear")
     async def clear_conversation() -> dict[str, str]:
         current = _get_agent(app)
@@ -271,6 +339,17 @@ def _serialize_result(result: AgentResult) -> ChatResponse:
         messages=visible_messages,
         reasoning=reasoning,
     )
+
+
+def _chat_response_to_dict(response: ChatResponse) -> dict[str, Any]:
+    if hasattr(response, "model_dump"):
+        return response.model_dump()
+    return response.dict()
+
+
+def _format_sse(event_type: str, data: Any) -> str:
+    payload = "" if data is None else json.dumps(data, ensure_ascii=False)
+    return f"event: {event_type}\ndata: {payload}\n\n"
 
 
 def build_default_agent(llm_config: LLMConfig | None = None) -> Agent:

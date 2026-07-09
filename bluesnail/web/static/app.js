@@ -284,28 +284,8 @@ chatForm.addEventListener("submit", async (event) => {
   setLoading(true);
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        session_id: sessionId,
-      }),
-    });
-
-    const data = await parseJsonResponse(response);
-    if (!response.ok) {
-      throw new Error(formatApiError(data.detail, "请求失败"));
-    }
-
-    const traceId = storeReasoningTrace(text, data.reasoning);
-    appendAssistantResult(data, traceId);
-    metaInfo.textContent = `迭代 ${data.iterations} 次 · 停止原因 ${data.stopped_reason}`;
-    if (data.stopped_reason === "llm_error") {
-      statusText.textContent = "LLM 出错";
-    } else {
-      statusText.textContent = "就绪";
-    }
+    await consumeChatStream(text);
+    statusText.textContent = "就绪";
   } catch (error) {
     statusText.textContent = "出错";
     showToast(error.message, true);
@@ -373,7 +353,153 @@ function appendAssistantResult(data, traceId = null) {
     traceId
   );
 
+  const chatStepState = new Map();
   for (const step of data.steps || []) {
+    appendStepMessagesToChat(step, traceId, chatStepState);
+  }
+}
+
+async function consumeChatStream(text) {
+  const response = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: text,
+      session_id: sessionId,
+    }),
+  });
+
+  if (!response.ok) {
+    const data = await parseJsonResponse(response);
+    throw new Error(formatApiError(data.detail, "请求失败"));
+  }
+
+  const traceId = beginReasoningStream(text);
+  setReasoningPanelVisible(true);
+  const chatStepState = new Map();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalData = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    buffer = processSSEBuffer(buffer, (eventType, data) => {
+      if (eventType === "start") {
+        updateReasoningRunContext(traceId, data.run_context || {});
+      } else if (eventType === "step") {
+        handleStreamStep(data, traceId, chatStepState);
+      } else if (eventType === "done") {
+        finalData = data;
+        finalizeReasoningStream(traceId, data);
+      } else if (eventType === "error") {
+        throw new Error(formatApiError(data.detail, "Agent 运行失败"));
+      }
+    });
+  }
+
+  if (!finalData) {
+    throw new Error("Agent 运行未完成");
+  }
+
+  if (finalData.stopped_reason === "llm_error") {
+    statusText.textContent = "LLM 出错";
+  }
+  metaInfo.textContent = `迭代 ${finalData.iterations} 次 · 停止原因 ${finalData.stopped_reason}`;
+}
+
+function processSSEBuffer(buffer, onEvent) {
+  const parts = buffer.split("\n\n");
+  const remaining = parts.pop() || "";
+  for (const part of parts) {
+    if (!part.trim()) {
+      continue;
+    }
+    let eventType = "message";
+    let dataLine = "";
+    for (const line of part.split("\n")) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataLine = line.slice(5).trim();
+      }
+    }
+    if (!dataLine) {
+      continue;
+    }
+    onEvent(eventType, JSON.parse(dataLine));
+  }
+  return remaining;
+}
+
+function beginReasoningStream(userInput) {
+  const trace = {
+    id: `trace-${Date.now()}-${reasoningTraces.length + 1}`,
+    userInput,
+    createdAt: new Date().toLocaleTimeString(),
+    reasoning: {
+      run_context: {},
+      steps: [],
+      stopped_reason: "-",
+      iterations: 0,
+    },
+  };
+  reasoningTraces.push(trace);
+  activeReasoningId = trace.id;
+  renderReasoningHistory();
+  renderReasoningStreamShell(trace);
+  return trace.id;
+}
+
+function handleStreamStep(step, traceId, chatStepState) {
+  appendReasoningStepLive(step, traceId);
+  appendStepMessagesToChat(step, traceId, chatStepState);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendStepMessagesToChat(step, traceId, chatStepState) {
+  const state = chatStepState.get(step.iteration) || {
+    assistant: false,
+    results: false,
+  };
+
+  const hasAssistantPayload = step.content || step.tool_calls?.length;
+  if (hasAssistantPayload && !state.assistant) {
+    if (step.finish_reason === "stop" || step.finish_reason === "error") {
+      appendMessage(
+        {
+          role: "assistant",
+          content: step.content,
+          metadata: {
+            is_error: step.finish_reason === "error",
+            ...(step.tool_calls?.length
+              ? { tool_calls: step.tool_calls }
+              : {}),
+          },
+        },
+        traceId
+      );
+    } else if (step.tool_calls?.length) {
+      appendMessage(
+        {
+          role: "assistant",
+          content: step.content || "",
+          metadata: { tool_calls: step.tool_calls },
+        },
+        traceId
+      );
+    }
+    state.assistant = true;
+  }
+
+  const hasResults =
+    step.skill_results?.length || step.tool_results?.length;
+  if (hasResults && !state.results) {
     for (const result of step.skill_results || []) {
       appendMessage({
         role: "tool",
@@ -390,6 +516,139 @@ function appendAssistantResult(data, traceId = null) {
         metadata: { is_error: result.is_error },
       });
     }
+    state.results = true;
+  }
+
+  chatStepState.set(step.iteration, state);
+}
+
+function finalizeReasoningStream(traceId, data) {
+  const trace = reasoningTraces.find((item) => item.id === traceId);
+  if (trace) {
+    trace.reasoning = data.reasoning || trace.reasoning;
+  }
+  updateReasoningOverview(traceId, data);
+}
+
+function updateReasoningRunContext(traceId, runContext) {
+  const trace = reasoningTraces.find((item) => item.id === traceId);
+  if (!trace) {
+    return;
+  }
+  trace.reasoning.run_context = runContext;
+  const recallEl = document.getElementById("reasoningRecallContext");
+  const systemEl = document.getElementById("reasoningSystemPrompt");
+  if (recallEl) {
+    recallEl.textContent = runContext.recall_context || "";
+    recallEl.closest(".reasoning-meta-item").classList.toggle(
+      "hidden",
+      !runContext.recall_context
+    );
+  }
+  if (systemEl) {
+    systemEl.textContent = runContext.system_prompt || "";
+    systemEl.closest(".reasoning-meta-item").classList.toggle(
+      "hidden",
+      !runContext.system_prompt
+    );
+  }
+}
+
+function updateReasoningOverview(traceId, data) {
+  const trace = reasoningTraces.find((item) => item.id === traceId);
+  if (trace && data.reasoning) {
+    trace.reasoning.stopped_reason = data.stopped_reason;
+    trace.reasoning.iterations = data.iterations;
+  }
+  const stoppedEl = document.getElementById("reasoningStoppedReason");
+  const iterationsEl = document.getElementById("reasoningIterations");
+  if (stoppedEl) {
+    stoppedEl.textContent = data.stopped_reason || "-";
+  }
+  if (iterationsEl) {
+    iterationsEl.textContent = String(data.iterations ?? 0);
+  }
+}
+
+function renderReasoningStreamShell(trace) {
+  const reasoning = trace.reasoning || {};
+  const runContext = reasoning.run_context || {};
+
+  reasoningContent.innerHTML = `
+    <div class="reasoning-block">
+      <h3>运行概览</h3>
+      <div class="reasoning-meta">
+        <div class="reasoning-meta-item">
+          <span class="reasoning-meta-label">用户输入</span>
+          ${escapeHtml(trace.userInput)}
+        </div>
+        <div class="reasoning-meta-item">
+          <span class="reasoning-meta-label">停止原因</span>
+          <span id="reasoningStoppedReason">${escapeHtml(reasoning.stopped_reason || "-")}</span>
+        </div>
+        <div class="reasoning-meta-item">
+          <span class="reasoning-meta-label">迭代次数</span>
+          <span id="reasoningIterations">${escapeHtml(String(reasoning.iterations || 0))}</span>
+        </div>
+        <div class="reasoning-meta-item${runContext.recall_context ? "" : " hidden"}">
+          <span class="reasoning-meta-label">召回记忆</span>
+          <span id="reasoningRecallContext">${escapeHtml(runContext.recall_context || "")}</span>
+        </div>
+        <div class="reasoning-meta-item${runContext.system_prompt ? "" : " hidden"}">
+          <span class="reasoning-meta-label">System Prompt</span>
+          <span id="reasoningSystemPrompt">${escapeHtml(runContext.system_prompt || "")}</span>
+        </div>
+      </div>
+    </div>
+    <div class="reasoning-block">
+      <h3>逐步推理</h3>
+      <div id="reasoningStepsLive" class="reasoning-steps-live"></div>
+    </div>
+  `;
+}
+
+function appendReasoningStepLive(step, traceId) {
+  const trace = reasoningTraces.find((item) => item.id === traceId);
+  let existingIndex = -1;
+  if (trace) {
+    existingIndex = trace.reasoning.steps.findIndex(
+      (item) => item.iteration === step.iteration
+    );
+    if (existingIndex >= 0) {
+      trace.reasoning.steps[existingIndex] = step;
+    } else {
+      trace.reasoning.steps.push(step);
+    }
+    trace.reasoning.iterations = trace.reasoning.steps.length;
+  }
+
+  if (traceId !== activeReasoningId) {
+    return;
+  }
+
+  const container = document.getElementById("reasoningStepsLive");
+  if (!container) {
+    return;
+  }
+
+  upsertReasoningStepDom(container, step);
+  const iterationsEl = document.getElementById("reasoningIterations");
+  if (iterationsEl && trace) {
+    iterationsEl.textContent = String(trace.reasoning.steps.length);
+  }
+  container.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  reasoningContent.scrollTop = reasoningContent.scrollHeight;
+}
+
+function upsertReasoningStepDom(container, step) {
+  const existing = container.querySelector(
+    `[data-iteration="${step.iteration}"]`
+  );
+  const html = renderReasoningStep(step);
+  if (existing) {
+    existing.outerHTML = html;
+  } else {
+    container.insertAdjacentHTML("beforeend", html);
   }
 }
 
@@ -447,49 +706,11 @@ function renderReasoningContent(trace) {
     return;
   }
 
-  const reasoning = trace.reasoning || {};
-  const runContext = reasoning.run_context || {};
-  const steps = reasoning.steps || [];
-
-  reasoningContent.innerHTML = `
-    <div class="reasoning-block">
-      <h3>运行概览</h3>
-      <div class="reasoning-meta">
-        <div class="reasoning-meta-item">
-          <span class="reasoning-meta-label">用户输入</span>
-          ${escapeHtml(trace.userInput)}
-        </div>
-        <div class="reasoning-meta-item">
-          <span class="reasoning-meta-label">停止原因</span>
-          ${escapeHtml(reasoning.stopped_reason || "-")}
-        </div>
-        <div class="reasoning-meta-item">
-          <span class="reasoning-meta-label">迭代次数</span>
-          ${escapeHtml(String(reasoning.iterations || steps.length || 0))}
-        </div>
-        ${
-          runContext.recall_context
-            ? `<div class="reasoning-meta-item">
-                <span class="reasoning-meta-label">召回记忆</span>
-                ${escapeHtml(runContext.recall_context)}
-              </div>`
-            : ""
-        }
-        ${
-          runContext.system_prompt
-            ? `<div class="reasoning-meta-item">
-                <span class="reasoning-meta-label">System Prompt</span>
-                ${escapeHtml(runContext.system_prompt)}
-              </div>`
-            : ""
-        }
-      </div>
-    </div>
-    <div class="reasoning-block">
-      <h3>逐步推理</h3>
-      ${steps.length ? steps.map((step) => renderReasoningStep(step)).join("") : '<div class="reasoning-empty">本次回复没有额外推理步骤。</div>'}
-    </div>
-  `;
+  renderReasoningStreamShell(trace);
+  const container = document.getElementById("reasoningStepsLive");
+  for (const step of trace.reasoning?.steps || []) {
+    container.insertAdjacentHTML("beforeend", renderReasoningStep(step));
+  }
 }
 
 function renderReasoningStep(step) {
@@ -541,7 +762,7 @@ function renderReasoningStep(step) {
   }
 
   return `
-    <div class="reasoning-step">
+    <div class="reasoning-step" data-iteration="${step.iteration}">
       <div class="reasoning-step-head">
         <div class="reasoning-step-title">Step ${step.iteration}</div>
         <span class="reasoning-tag ${tagClass}">${escapeHtml(tagText)}</span>

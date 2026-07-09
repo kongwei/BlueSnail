@@ -1,5 +1,7 @@
 """WebUI API tests."""
 
+import json
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -77,6 +79,8 @@ def test_get_llm_config(client: TestClient) -> None:
 
 
 def test_update_llm_config(client: TestClient) -> None:
+    from bluesnail.web.llm_config import config_path
+
     response = client.put(
         "/api/llm/config",
         json={
@@ -88,6 +92,10 @@ def test_update_llm_config(client: TestClient) -> None:
     data = response.json()
     assert data["system_prompt"] == "You are a test assistant."
     assert data["api_key_set"] is True
+
+    saved = json.loads(config_path().read_text(encoding="utf-8"))
+    assert saved["api_key"] == "sk-updated"
+    assert saved["system_prompt"] == "You are a test assistant."
 
 
 def test_update_llm_config_requires_key(client: TestClient) -> None:
@@ -140,6 +148,51 @@ def test_chat_with_skill(client: TestClient) -> None:
     assert any(step["skill_results"] for step in data["steps"])
     assert data["reasoning"]["steps"]
     assert data["reasoning"]["steps"][0]["input_messages"]
+
+
+def test_chat_stream(client: TestClient) -> None:
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"message": "上海天气怎么样？"},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+
+        events: list[tuple[str, dict]] = []
+        buffer = ""
+        for chunk in response.iter_text():
+            buffer += chunk
+            while "\n\n" in buffer:
+                part, buffer = buffer.split("\n\n", 1)
+                if not part.strip():
+                    continue
+                event_type = "message"
+                data_line = ""
+                for line in part.split("\n"):
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data_line = line[5:].strip()
+                if data_line:
+                    events.append((event_type, json.loads(data_line)))
+
+    event_types = [event_type for event_type, _ in events]
+    assert "start" in event_types
+    assert "step" in event_types
+    assert "done" in event_types
+    assert event_types.index("start") < event_types.index("step")
+    assert event_types.index("step") < event_types.index("done")
+
+    step_events = [data for event_type, data in events if event_type == "step"]
+    assert len(step_events) >= 2
+    assert step_events[0]["tool_calls"]
+    assert not step_events[0]["tool_results"] and not step_events[0]["skill_results"]
+    assert any(step["skill_results"] for step in step_events)
+
+    done_payload = next(data for event_type, data in events if event_type == "done")
+    assert done_payload["answer"]
+    assert done_payload["reasoning"]["steps"]
 
 
 def test_chat_reasoning_contains_context(client: TestClient) -> None:
