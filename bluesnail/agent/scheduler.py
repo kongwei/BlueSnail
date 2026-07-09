@@ -28,7 +28,7 @@ from bluesnail.agent.types import (
 
 @dataclass(slots=True)
 class SchedulerConfig:
-    max_iterations: int = 10
+    max_iterations: int = 50
     auto_recall: bool = True
     recall_top_k: int = 3
 
@@ -102,7 +102,8 @@ class Scheduler:
             step_input = list(llm_messages)
             response = None
             llm_error = None
-            for attempt in range(3):
+            max_attempts = 3
+            for attempt in range(max_attempts):
                 try:
                     response = self.llm.chat(
                         llm_messages,
@@ -112,9 +113,8 @@ class Scheduler:
                     break
                 except Exception as exc:
                     llm_error = exc
-                    print(str(exc))
-                    if attempt < 2:
-                        time.sleep(10)
+                    if attempt < max_attempts - 1:
+                        time.sleep(attempt * 5 + 5)
             if llm_error is not None:
                 stopped_reason = "llm_error"
                 final_answer = f"LLM 调用失败：{llm_error}"
