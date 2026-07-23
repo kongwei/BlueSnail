@@ -12,6 +12,7 @@ import urllib.request
 from typing import Any
 
 from bluesnail.agent.tools import ToolManager
+from bluesnail.tools.http_content import extract_useful_content
 
 DEFAULT_TIMEOUT_SECONDS = 15
 MAX_TIMEOUT_SECONDS = 60
@@ -48,6 +49,15 @@ HTTP_REQUEST_PARAMETERS = {
             "description": (
                 f"Request timeout in seconds "
                 f"(default {DEFAULT_TIMEOUT_SECONDS}, max {MAX_TIMEOUT_SECONDS})"
+            ),
+        },
+        "extract": {
+            "type": "boolean",
+            "description": (
+                "If true (default), extract useful content from the response: "
+                "HTML keeps visible text only (scripts/styles/css removed), "
+                "JSON is compacted, plain text is normalized. "
+                "If false, return the raw response body."
             ),
         },
     },
@@ -174,16 +184,47 @@ def _read_limited(response: Any) -> tuple[bytes, bool]:
     return raw, truncated
 
 
+def _build_result(
+    *,
+    url: str,
+    status_code: int,
+    content_type: str | None,
+    text: str,
+    truncated: bool,
+    extract: bool,
+    response_headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "url": url,
+        "status_code": int(status_code),
+        "content_type": content_type or "",
+        "truncated": truncated,
+    }
+    if extract:
+        extracted = extract_useful_content(text, content_type)
+        result.update(extracted)
+        result["truncated"] = truncated or bool(extracted.get("content_truncated"))
+    else:
+        result["headers"] = response_headers or {}
+        result["body"] = text
+    return result
+
+
 def http_request(
     url: str,
     method: str = "GET",
     headers: dict[str, str] | None = None,
     body: str | None = None,
     timeout: float | None = None,
+    extract: bool = True,
     *,
     block_private: bool = True,
 ) -> dict[str, Any]:
-    """Perform an HTTP request and return a structured response."""
+    """Perform an HTTP request and return a structured response.
+
+    When ``extract`` is true (default), HTML/JSON/text bodies are reduced to
+    useful content before being returned to the agent.
+    """
     method_upper = (method or "GET").strip().upper()
     if method_upper not in ALLOWED_METHODS:
         raise ValueError(f"Unsupported HTTP method: {method}")
@@ -222,13 +263,15 @@ def http_request(
                 raw, truncated = _read_limited(response)
                 content_type = response.headers.get("Content-Type")
                 text = _decode_body(raw, content_type)
-                return {
-                    "url": current_url,
-                    "status_code": int(status),
-                    "headers": response_headers,
-                    "body": text,
-                    "truncated": truncated,
-                }
+                return _build_result(
+                    url=current_url,
+                    status_code=int(status),
+                    content_type=content_type,
+                    text=text,
+                    truncated=truncated,
+                    extract=extract,
+                    response_headers=response_headers,
+                )
         except urllib.error.HTTPError as exc:
             # Redirects become HTTPError because automatic following is disabled.
             if 300 <= exc.code < 400:
@@ -253,16 +296,19 @@ def http_request(
             raw, truncated = _read_limited(exc)
             content_type = exc.headers.get("Content-Type") if exc.headers else None
             text = _decode_body(raw, content_type)
-            return {
-                "url": current_url,
-                "status_code": int(exc.code),
-                "headers": {
-                    key: value
-                    for key, value in (exc.headers.items() if exc.headers else [])
-                },
-                "body": text,
-                "truncated": truncated,
+            response_headers = {
+                key: value
+                for key, value in (exc.headers.items() if exc.headers else [])
             }
+            return _build_result(
+                url=current_url,
+                status_code=int(exc.code),
+                content_type=content_type,
+                text=text,
+                truncated=truncated,
+                extract=extract,
+                response_headers=response_headers,
+            )
         except urllib.error.URLError as exc:
             raise RuntimeError(f"HTTP request failed: {exc.reason}") from exc
 
@@ -280,7 +326,8 @@ def register_http_tools(
         name="http_request",
         description=(
             "Fetch external data over HTTP/HTTPS. Supports GET/POST/PUT/PATCH/DELETE/HEAD. "
-            "Returns status_code, response headers, and body text. "
+            "By default extracts useful content: HTML pages become visible text only "
+            "(CSS/scripts/styles removed), JSON is compacted. "
             "Private/local network targets are blocked by default."
         ),
         parameters=HTTP_REQUEST_PARAMETERS,
@@ -291,6 +338,7 @@ def register_http_tools(
         headers: dict[str, str] | None = None,
         body: str | None = None,
         timeout: float | None = None,
+        extract: bool = True,
     ) -> str:
         result = http_request(
             url=url,
@@ -298,6 +346,7 @@ def register_http_tools(
             headers=headers,
             body=body,
             timeout=timeout,
+            extract=extract,
             block_private=block_private,
         )
         return json.dumps(result, ensure_ascii=False)

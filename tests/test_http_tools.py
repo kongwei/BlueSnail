@@ -68,6 +68,16 @@ def http_server():
         },
         "/echo": {"status": 200, "body": "posted"},
         "/error": {"status": 503, "body": "unavailable"},
+        "/page": {
+            "status": 200,
+            "body": (
+                "<html><head><title>Demo</title>"
+                "<style>body{color:red}</style></head>"
+                "<body><h1>Title</h1><p>Useful text</p>"
+                "<script>bad()</script></body></html>"
+            ),
+            "headers": {"Content-Type": "text/html; charset=utf-8"},
+        },
     }
     try:
         yield base_url
@@ -94,7 +104,9 @@ def test_http_request_get_json(http_server: str):
     result = http_request(f"{http_server}/ok", block_private=False)
     assert result["status_code"] == 200
     assert result["truncated"] is False
-    assert '"hello"' in result["body"]
+    assert result["content_kind"] == "json"
+    assert '"hello"' in result["content"]
+    assert "body" not in result
 
 
 def test_http_request_tool_via_manager(tools: ToolManager, http_server: str):
@@ -108,7 +120,28 @@ def test_http_request_tool_via_manager(tools: ToolManager, http_server: str):
     assert not result.is_error
     payload = json.loads(result.content)
     assert payload["status_code"] == 200
-    assert "world" in payload["body"]
+    assert "world" in payload["content"]
+
+
+def test_http_request_extracts_html_text(http_server: str):
+    result = http_request(f"{http_server}/page", block_private=False)
+    assert result["content_kind"] == "html"
+    assert result["title"] == "Demo"
+    assert "Useful text" in result["content"]
+    assert "Title" in result["content"]
+    assert "color:red" not in result["content"]
+    assert "bad()" not in result["content"]
+
+
+def test_http_request_raw_body_when_extract_false(http_server: str):
+    result = http_request(
+        f"{http_server}/page",
+        extract=False,
+        block_private=False,
+    )
+    assert "body" in result
+    assert "<style>" in result["body"]
+    assert "content" not in result
 
 
 def test_http_request_post(http_server: str):
@@ -127,13 +160,13 @@ def test_http_request_follows_redirect(http_server: str):
     result = http_request(f"{http_server}/redirect", block_private=False)
     assert result["status_code"] == 200
     assert result["url"].endswith("/ok")
-    assert "world" in result["body"]
+    assert "world" in result["content"]
 
 
 def test_http_request_returns_error_body(http_server: str):
     result = http_request(f"{http_server}/error", block_private=False)
     assert result["status_code"] == 503
-    assert result["body"] == "unavailable"
+    assert result["content"] == "unavailable"
 
 
 def test_validate_url_rejects_non_http_scheme():
