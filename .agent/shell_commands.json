@@ -1,0 +1,60 @@
+{
+  "timeout_seconds": 60,
+  "max_output_bytes": 1048576,
+  "commands": {
+    "common": [
+      "git",
+      "python",
+      "python3",
+      "pip",
+      "pip3",
+      "node",
+      "npm",
+      "npx",
+      "echo",
+      "whoami",
+      "hostname"
+    ],
+    "windows": [
+      "dir",
+      "type",
+      "cd",
+      "chdir",
+      "mkdir",
+      "md",
+      "rmdir",
+      "rd",
+      "copy",
+      "move",
+      "del",
+      "erase",
+      "ren",
+      "rename",
+      "where",
+      "ver",
+      "vol",
+      "date",
+      "time",
+      "py"
+    ],
+    "linux": [
+      "ls",
+      "cat",
+      "pwd",
+      "mkdir",
+      "rmdir",
+      "cp",
+      "mv",
+      "rm",
+      "touch",
+      "which",
+      "uname",
+      "date",
+      "head",
+      "tail",
+      "wc",
+      "find",
+      "grep"
+    ]
+  }
+}

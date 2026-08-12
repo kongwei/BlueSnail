@@ -7,6 +7,7 @@ from pathlib import Path
 from bluesnail.agent.tools import ToolManager
 from bluesnail.tools.filesystem import register_filesystem_tools
 from bluesnail.tools.http import register_http_tools
+from bluesnail.tools.shell import register_shell_tools
 
 __all__ = ["create_default_tools"]
 
@@ -16,4 +17,5 @@ def create_default_tools(workspace_root: Path | None = None) -> ToolManager:
     manager = ToolManager()
     register_filesystem_tools(manager, workspace_root=workspace_root)
     register_http_tools(manager)
+    register_shell_tools(manager, workspace_root=workspace_root)
     return manager
