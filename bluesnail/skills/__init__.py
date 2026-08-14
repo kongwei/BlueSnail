@@ -11,12 +11,27 @@ __all__ = ["BUILTIN_SKILLS_DIR", "create_default_skills", "discover_skill_direct
 
 
 def discover_skill_directories() -> list[Path]:
-    """Discover standard skill directories."""
-    directories = [BUILTIN_SKILLS_DIR]
+    """Discover Agent Skills directories (agentskills.io client layout).
 
-    project_dir = Path(".cursor/skills")
-    if project_dir.exists():
-        directories.append(project_dir.resolve())
+    Later entries override earlier ones on name collision. Order:
+
+    1. Built-in BlueSnail skills
+    2. User-level ``~/.agents/skills`` and ``~/.cursor/skills``
+    3. Project-level ``.agents/skills`` and ``.cursor/skills``
+    4. ``BLUESNAIL_SKILL_DIRS`` (pathsep-separated)
+    """
+    directories: list[Path] = [BUILTIN_SKILLS_DIR]
+
+    home = Path.home()
+    for relative in (Path(".agents") / "skills", Path(".cursor") / "skills"):
+        user_dir = home / relative
+        if user_dir.is_dir():
+            directories.append(user_dir.resolve())
+
+    for relative in (Path(".agents") / "skills", Path(".cursor") / "skills"):
+        project_dir = Path.cwd() / relative
+        if project_dir.is_dir():
+            directories.append(project_dir.resolve())
 
     custom = os.getenv("BLUESNAIL_SKILL_DIRS", "")
     for item in custom.split(os.pathsep):

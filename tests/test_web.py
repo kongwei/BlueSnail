@@ -9,7 +9,13 @@ httpx = pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-from bluesnail.agent import Agent, AgentConfig, MockLLMProvider
+from bluesnail.agent import (
+    ACTIVATE_SKILL_NAME,
+    RUN_SKILL_SCRIPT_NAME,
+    Agent,
+    AgentConfig,
+    MockLLMProvider,
+)
 from bluesnail.agent.providers.openai_compatible import OpenAICompatibleProvider
 from bluesnail.agent.types import LLMResponse
 from bluesnail.skills import create_default_skills
@@ -17,12 +23,21 @@ from bluesnail.web.app import create_app
 from bluesnail.web.llm_config import LLMConfig
 
 
-def build_test_agent() -> tuple[Agent, LLMConfig]:
+def build_test_agent(monkeypatch=None) -> tuple[Agent, LLMConfig]:
     llm = MockLLMProvider(default_content="你好，我是助手。")
     llm.queue_tool_call(
         "call_1",
-        "get-weather",
-        {"city": "上海"},
+        ACTIVATE_SKILL_NAME,
+        {"name": "get-weather"},
+    )
+    llm.queue_tool_call(
+        "call_2",
+        RUN_SKILL_SCRIPT_NAME,
+        {
+            "skill": "get-weather",
+            "script": "scripts/get_weather.py",
+            "arguments": ["--city", "上海"],
+        },
         then_content="上海今天天气晴朗，气温约 26°C。",
     )
     config = LLMConfig(
@@ -39,7 +54,16 @@ def build_test_agent() -> tuple[Agent, LLMConfig]:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(monkeypatch) -> TestClient:
+    class FakeCompleted:
+        returncode = 0
+        stdout = '{"city":"上海","temperature":"26C","weather":"clear sky"}'
+        stderr = ""
+
+    monkeypatch.setattr(
+        "bluesnail.agent.skills.subprocess.run",
+        lambda *args, **kwargs: FakeCompleted(),
+    )
     agent, config = build_test_agent()
     app = create_app(agent, config)
     return TestClient(app)

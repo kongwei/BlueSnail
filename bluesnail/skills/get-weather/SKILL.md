@@ -1,7 +1,6 @@
 ---
 name: get-weather
 description: Query current weather information for a city. Use when the user asks about weather, temperature, forecasts, or whether they need an umbrella.
-disable-model-invocation: false
 ---
 
 # Get Weather
@@ -9,12 +8,31 @@ disable-model-invocation: false
 ## Instructions
 
 1. Extract the target city from the user request.
-2. Invoke this skill with the `city` argument.
-3. Summarize the returned weather data in concise natural language.
+2. Run the bundled script with `run_skill_script`:
+
+```json
+{
+  "skill": "get-weather",
+  "script": "scripts/get_weather.py",
+  "arguments": ["--city", "<CITY>"]
+}
+```
+
+Equivalent shell form (from this skill directory):
+
+```bash
+python scripts/get_weather.py --city "<CITY>"
+```
+
+3. Summarize the returned JSON weather data in concise natural language.
+
+## Available scripts
+
+- **`scripts/get_weather.py`** — Fetches live weather from Open-Meteo (no API key).
 
 ## Output
 
-Return structured JSON containing:
+The script prints structured JSON containing:
 
 - `city`
 - `country`
@@ -25,12 +43,10 @@ Return structured JSON containing:
 - `wind_speed`
 - `source` (open-meteo.com)
 
-Data is fetched live from the Open-Meteo geocoding and forecast APIs. No API key is required.
-
 ## Examples
 
 User: 上海今天天气怎么样？
-Action: call `get-weather` with `{ "city": "上海" }`
+Action: `run_skill_script` with skill=`get-weather`, script=`scripts/get_weather.py`, arguments=`["--city", "上海"]`
 
 User: What's the weather in Beijing?
-Action: call `get-weather` with `{ "city": "Beijing" }`
+Action: `run_skill_script` with skill=`get-weather`, script=`scripts/get_weather.py`, arguments=`["--city", "Beijing"]`

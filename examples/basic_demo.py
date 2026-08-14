@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from bluesnail.agent import (
+    ACTIVATE_SKILL_NAME,
+    RUN_SKILL_SCRIPT_NAME,
     Agent,
     AgentConfig,
     ContextConfig,
@@ -18,8 +20,17 @@ def main() -> None:
     llm = MockLLMProvider(default_content="Hello from BlueSnail!")
     llm.queue_tool_call(
         "call_demo_1",
-        "get-weather",
-        {"city": "Shanghai"},
+        ACTIVATE_SKILL_NAME,
+        {"name": "get-weather"},
+    )
+    llm.queue_tool_call(
+        "call_demo_2",
+        RUN_SKILL_SCRIPT_NAME,
+        {
+            "skill": "get-weather",
+            "script": "scripts/get_weather.py",
+            "arguments": ["--city", "Shanghai"],
+        },
         then_content="Shanghai is sunny today, 26C.",
     )
 

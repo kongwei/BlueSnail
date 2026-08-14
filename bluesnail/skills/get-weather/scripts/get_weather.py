@@ -1,8 +1,11 @@
-"""Handler for the get-weather skill."""
+#!/usr/bin/env python3
+"""CLI weather lookup for the get-weather Agent Skill."""
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,14 +37,6 @@ _WMO_DESCRIPTIONS = {
     96: "thunderstorm with slight hail",
     99: "thunderstorm with heavy hail",
 }
-
-
-def run(city: str) -> dict[str, str | float]:
-    """Return current weather for the requested city."""
-    city = city.strip()
-    if not city:
-        raise ValueError("city is required")
-    return fetch_weather(city)
 
 
 def fetch_weather(city: str) -> dict[str, str | float]:
@@ -121,3 +116,33 @@ def http_get_json(base_url: str, params: dict) -> dict:
     if not isinstance(data, dict):
         raise RuntimeError("Weather API returned invalid JSON payload")
     return data
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Query current weather for a city via Open-Meteo."
+    )
+    parser.add_argument(
+        "--city",
+        required=True,
+        help="City name to look up (e.g. Shanghai, 上海)",
+    )
+    args = parser.parse_args(argv)
+
+    city = args.city.strip()
+    if not city:
+        print("Error: --city is required and must be non-empty.", file=sys.stderr)
+        return 2
+
+    try:
+        result = fetch_weather(city)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

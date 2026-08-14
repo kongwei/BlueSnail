@@ -1,9 +1,8 @@
 """Basic tests for BlueSnail agent framework."""
 
-import importlib.util
-from pathlib import Path
-
 from bluesnail.agent import (
+    ACTIVATE_SKILL_NAME,
+    RUN_SKILL_SCRIPT_NAME,
     Agent,
     ContextManager,
     MemoryProcessor,
@@ -12,7 +11,6 @@ from bluesnail.agent import (
     SkillManager,
     ToolManager,
 )
-from bluesnail.agent.skill_loader import load_skill_package
 from bluesnail.agent.types import LLMResponse, Message, ToolCall
 from bluesnail.skills import create_default_skills
 
@@ -51,43 +49,18 @@ def test_tool_execution():
     assert not result.is_error
 
 
-def test_skill_execution(monkeypatch):
-    handler_path = (
-        Path(__file__).resolve().parents[1]
-        / "bluesnail"
-        / "skills"
-        / "get-weather"
-        / "scripts"
-        / "handler.py"
-    )
-    spec = importlib.util.spec_from_file_location("get_weather_handler_agent_test", handler_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    monkeypatch.setattr(
-        module,
-        "fetch_weather",
-        lambda city: {
-            "city": city,
-            "country": "中国",
-            "weather": "clear sky",
-            "weather_code": 0,
-            "temperature": "26C",
-            "humidity": "60%",
-            "wind_speed": "10 km/h",
-            "source": "open-meteo.com",
-        },
-    )
-
-    skills = SkillManager()
-    package = load_skill_package(handler_path.parents[1])
-    skills.register_package(package)
-    skills.registry.get("get-weather").handler = module.run
-
+def test_skill_activation():
+    skills = create_default_skills()
     result = skills.run(
-        ToolCall(id="call_1", name="get-weather", arguments={"city": "上海"})
+        ToolCall(
+            id="call_1",
+            name=ACTIVATE_SKILL_NAME,
+            arguments={"name": "get-weather"},
+        )
     )
-    assert "上海" in result.content
     assert not result.is_error
+    assert "scripts/get_weather.py" in result.content
+    assert "run_skill_script" in result.content
 
 
 def test_agent_run_with_tool():
@@ -106,13 +79,33 @@ def test_agent_run_with_tool():
     assert result.iterations == 2
 
 
-def test_agent_run_with_skill():
+def test_agent_run_with_skill(monkeypatch):
     skills = create_default_skills()
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = '{"city":"上海","temperature":"26C","weather":"clear sky"}'
+        stderr = ""
+
+    monkeypatch.setattr(
+        "bluesnail.agent.skills.subprocess.run",
+        lambda *args, **kwargs: FakeCompleted(),
+    )
+
     llm = MockLLMProvider()
     llm.queue_tool_call(
         "call_1",
-        "get-weather",
-        {"city": "上海"},
+        ACTIVATE_SKILL_NAME,
+        {"name": "get-weather"},
+    )
+    llm.queue_tool_call(
+        "call_2",
+        RUN_SKILL_SCRIPT_NAME,
+        {
+            "skill": "get-weather",
+            "script": "scripts/get_weather.py",
+            "arguments": ["--city", "上海"],
+        },
         then_content="上海今天 26C。",
     )
 
@@ -120,6 +113,11 @@ def test_agent_run_with_skill():
     result = agent.run("上海天气怎么样？")
     assert "26" in result.answer or "上海" in result.answer
     assert any(step.skill_results for step in result.steps)
+    assert any(
+        skill_result.name == RUN_SKILL_SCRIPT_NAME
+        for step in result.steps
+        for skill_result in step.skill_results
+    )
 
 
 def test_agent_unknown_tool_returns_error_to_llm():
@@ -158,3 +156,14 @@ def test_agent_direct_response():
     result = agent.run("hello")
     assert result.answer == "done"
     assert result.iterations == 1
+
+
+def test_programmatic_callable_skill():
+    skills = SkillManager()
+
+    @skills.skill(description="Double a number")
+    def double(value: int) -> int:
+        return value * 2
+
+    result = skills.run(ToolCall(id="c1", name="double", arguments={"value": 4}))
+    assert result.content == "8"

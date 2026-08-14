@@ -6,7 +6,13 @@ from bluesnail.agent.llm import BaseLLMProvider, LLMProvider, MockLLMProvider
 from bluesnail.agent.memory import InMemoryStore, MemoryProcessor, MemoryStore
 from bluesnail.agent.scheduler import Scheduler, SchedulerConfig
 from bluesnail.agent.skill_loader import AgentSkillPackage
-from bluesnail.agent.skills import SkillDefinition, SkillManager, SkillRegistry
+from bluesnail.agent.skills import (
+    ACTIVATE_SKILL_NAME,
+    RUN_SKILL_SCRIPT_NAME,
+    SkillDefinition,
+    SkillManager,
+    SkillRegistry,
+)
 from bluesnail.agent.tools import ToolDefinition, ToolManager, ToolRegistry
 from bluesnail.agent.types import (
     AgentResult,
@@ -40,6 +46,8 @@ __all__ = [
     "Role",
     "Scheduler",
     "SchedulerConfig",
+    "ACTIVATE_SKILL_NAME",
+    "RUN_SKILL_SCRIPT_NAME",
     "AgentSkillPackage",
     "SkillDefinition",
     "SkillManager",
