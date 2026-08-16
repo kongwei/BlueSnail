@@ -5,6 +5,16 @@ from bluesnail.agent.context import ContextConfig, ContextManager, ContextWindow
 from bluesnail.agent.llm import BaseLLMProvider, LLMProvider, MockLLMProvider
 from bluesnail.agent.memory import InMemoryStore, MemoryProcessor, MemoryStore
 from bluesnail.agent.scheduler import Scheduler, SchedulerConfig
+from bluesnail.agent.workflow import (
+    Workflow,
+    WorkflowBundle,
+    WorkflowStep,
+    default_bundle,
+    default_direct_workflow,
+    default_react_workflow,
+    validate_workflow,
+    workflow_catalog,
+)
 from bluesnail.agent.skill_loader import AgentSkillPackage
 from bluesnail.agent.skills import (
     ACTIVATE_SKILL_NAME,
@@ -58,4 +68,12 @@ __all__ = [
     "ToolManager",
     "ToolRegistry",
     "ToolResult",
+    "Workflow",
+    "WorkflowBundle",
+    "WorkflowStep",
+    "default_bundle",
+    "default_direct_workflow",
+    "default_react_workflow",
+    "validate_workflow",
+    "workflow_catalog",
 ]

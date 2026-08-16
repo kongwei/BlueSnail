@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>流程编排 · BlueSnail</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body class="workflow-studio">
+    <header class="studio-header">
+      <a class="studio-back" href="/">← 返回对话</a>
+      <div>
+        <h1>流程编排</h1>
+        <p>用流程 ID 和名称标识一个流程，对话页只需引用它。</p>
+      </div>
+      <div class="studio-header-actions">
+        <button id="resetWorkflowBtn" class="btn secondary" type="button">恢复默认</button>
+        <button id="saveWorkflowBtn" class="btn primary" type="button">保存流程库</button>
+      </div>
+    </header>
+
+    <div class="studio">
+      <aside class="studio-list">
+        <div class="studio-list-head">
+          <h2>流程库</h2>
+          <button id="addWorkflowBtn" class="btn secondary" type="button">新建</button>
+        </div>
+        <p id="activeWorkflowHint" class="hint">当前对话流程：—</p>
+        <ul id="workflowList" class="workflow-library"></ul>
+      </aside>
+
+      <main class="studio-editor">
+        <form id="workflowForm" class="llm-form">
+          <div class="studio-id-row">
+            <label class="field">
+              <span>流程 ID</span>
+              <input id="workflowId" type="text" maxlength="80" required />
+            </label>
+            <label class="field">
+              <span>流程名称</span>
+              <input id="workflowName" type="text" maxlength="80" required />
+            </label>
+          </div>
+          <label class="field">
+            <span>说明</span>
+            <textarea id="workflowDescription" rows="2"></textarea>
+          </label>
+          <div class="workflow-inline">
+            <label class="field">
+              <span>入口步骤</span>
+              <input id="workflowEntry" type="text" maxlength="80" />
+            </label>
+            <label class="field">
+              <span>最大迭代</span>
+              <input id="workflowMaxIterations" type="number" min="1" max="200" />
+            </label>
+          </div>
+          <div class="btn-row workflow-btn-row">
+            <button id="activateWorkflowBtn" class="btn secondary" type="button">
+              设为当前对话流程
+            </button>
+            <button id="deleteWorkflowBtn" class="btn secondary" type="button">删除此流程</button>
+          </div>
+          <div class="workflow-preview" id="workflowPreview"></div>
+          <div id="workflowSteps" class="workflow-steps"></div>
+          <button id="addWorkflowStepBtn" class="btn secondary" type="button">添加步骤</button>
+          <label class="field">
+            <span>当前流程 JSON</span>
+            <textarea id="workflowJson" rows="10" spellcheck="false"></textarea>
+          </label>
+        </form>
+      </main>
+    </div>
+
+    <script src="/static/workflow.js"></script>
+  </body>
+</html>

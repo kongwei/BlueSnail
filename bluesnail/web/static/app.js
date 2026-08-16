@@ -23,6 +23,8 @@ const llmApiKeyHint = document.getElementById("llmApiKeyHint");
 const llmTimeout = document.getElementById("llmTimeout");
 const llmSystemPrompt = document.getElementById("llmSystemPrompt");
 const testLlmBtn = document.getElementById("testLlmBtn");
+const workflowSelect = document.getElementById("workflowSelect");
+const workflowMeta = document.getElementById("workflowMeta");
 const toggleReasoningBtn = document.getElementById("toggleReasoningBtn");
 const closeReasoningBtn = document.getElementById("closeReasoningBtn");
 const reasoningPanel = document.getElementById("reasoningPanel");
@@ -37,6 +39,7 @@ const sessionId = `web-${Date.now()}`;
 let loading = false;
 let reasoningTraces = [];
 let activeReasoningId = null;
+let workflowBundle = null;
 
 async function parseJsonResponse(response) {
   const contentType = response.headers.get("content-type") || "";
@@ -81,10 +84,17 @@ init();
 
 async function init() {
   renderEmptyState();
-  await Promise.all([loadTools(), loadSkills(), loadHistory(), loadLlmConfig()]);
+  await Promise.all([
+    loadTools(),
+    loadSkills(),
+    loadHistory(),
+    loadLlmConfig(),
+    loadWorkflow(),
+  ]);
   llmPanelToggle.addEventListener("click", toggleLlmPanel);
   llmConfigForm.addEventListener("submit", saveLlmConfig);
   testLlmBtn.addEventListener("click", testLlmConfig);
+  workflowSelect.addEventListener("change", activateSelectedWorkflow);
   toggleReasoningBtn.addEventListener("click", () => setReasoningPanelVisible(true));
   closeReasoningBtn.addEventListener("click", () => setReasoningPanelVisible(false));
   toggleSidebarBtn.addEventListener("click", () => setSidebarOpen(true));
@@ -200,6 +210,84 @@ async function testLlmConfig() {
   } finally {
     testLlmBtn.disabled = false;
     testLlmBtn.textContent = "测试连接";
+  }
+}
+
+async function loadWorkflow() {
+  try {
+    const response = await fetch("/api/workflow");
+    const bundle = await parseJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(formatApiError(bundle.detail, "加载流程失败"));
+    }
+    applyWorkflowBundle(bundle);
+  } catch (error) {
+    showToast(`加载流程失败：${error.message}`, true);
+  }
+}
+
+function applyWorkflowBundle(bundle) {
+  workflowBundle = bundle;
+  renderWorkflowSelect();
+}
+
+function getActiveWorkflow() {
+  if (!workflowBundle?.workflows?.length) {
+    return null;
+  }
+  return (
+    workflowBundle.workflows.find((item) => item.id === workflowBundle.active_id) ||
+    workflowBundle.workflows[0]
+  );
+}
+
+function renderWorkflowSelect() {
+  workflowSelect.innerHTML = "";
+  for (const item of workflowBundle?.workflows || []) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = `${item.name || item.id}（${item.id}）`;
+    workflowSelect.appendChild(option);
+  }
+  const active = getActiveWorkflow();
+  workflowSelect.value = active?.id || workflowBundle?.active_id || "";
+  updateWorkflowMeta(active);
+}
+
+function updateWorkflowMeta(workflow) {
+  if (!workflow) {
+    workflowMeta.textContent = "尚未选择流程。可先到流程编排页创建。";
+    return;
+  }
+  const desc = workflow.description ? ` · ${workflow.description}` : "";
+  workflowMeta.textContent = `ID: ${workflow.id} · 名称: ${workflow.name}${desc}`;
+}
+
+async function activateSelectedWorkflow() {
+  const ref = workflowSelect.value;
+  if (!ref) {
+    return;
+  }
+  try {
+    const response = await fetch("/api/workflow/active", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref }),
+    });
+    const data = await parseJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(formatApiError(data.detail, "切换流程失败"));
+    }
+    if (workflowBundle) {
+      workflowBundle.active_id = data.id;
+    }
+    updateWorkflowMeta(
+      workflowBundle?.workflows?.find((item) => item.id === data.id) || data
+    );
+    showToast(`已引用流程：${data.name}（${data.id}）`);
+  } catch (error) {
+    showToast(error.message, true);
+    renderWorkflowSelect();
   }
 }
 
@@ -552,6 +640,20 @@ function updateReasoningRunContext(traceId, runContext) {
       !runContext.system_prompt
     );
   }
+  const workflowEl = document.getElementById("reasoningWorkflow");
+  if (workflowEl) {
+    workflowEl.textContent = runContext.workflow_name || runContext.workflow_id || "";
+    workflowEl.closest(".reasoning-meta-item").classList.toggle(
+      "hidden",
+      !(runContext.workflow_name || runContext.workflow_id)
+    );
+  }
+  const traceEl = document.getElementById("reasoningWorkflowTrace");
+  if (traceEl) {
+    const traceText = (runContext.workflow_trace || []).map((item) => item.id).join(" → ");
+    traceEl.textContent = traceText;
+    traceEl.closest(".reasoning-meta-item").classList.toggle("hidden", !traceText);
+  }
 }
 
 function updateReasoningOverview(traceId, data) {
@@ -589,6 +691,18 @@ function renderReasoningStreamShell(trace) {
         <div class="reasoning-meta-item">
           <span class="reasoning-meta-label">迭代次数</span>
           <span id="reasoningIterations">${escapeHtml(String(reasoning.iterations || 0))}</span>
+        </div>
+        <div class="reasoning-meta-item${runContext.workflow_name ? "" : " hidden"}">
+          <span class="reasoning-meta-label">流程</span>
+          <span id="reasoningWorkflow">${escapeHtml(runContext.workflow_name || runContext.workflow_id || "")}</span>
+        </div>
+        <div class="reasoning-meta-item${runContext.workflow_trace?.length ? "" : " hidden"}">
+          <span class="reasoning-meta-label">流程轨迹</span>
+          <span id="reasoningWorkflowTrace">${escapeHtml(
+            (runContext.workflow_trace || [])
+              .map((item) => item.id)
+              .join(" → ")
+          )}</span>
         </div>
         <div class="reasoning-meta-item${runContext.recall_context ? "" : " hidden"}">
           <span class="reasoning-meta-label">召回记忆</span>

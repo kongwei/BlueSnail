@@ -85,6 +85,18 @@ def test_index(client: TestClient) -> None:
     assert "markdown.js" in response.text
     assert "highlight.min.js" in response.text
     assert "Skills" in response.text
+    assert "当前流程" in response.text
+    assert "打开流程编排" in response.text
+    assert "/workflow" in response.text
+    assert "workflowForm" not in response.text
+
+
+def test_workflow_page(client: TestClient) -> None:
+    response = client.get("/workflow")
+    assert response.status_code == 200
+    assert "流程编排" in response.text
+    assert "workflow.js" in response.text
+    assert "流程 ID" in response.text
 
 
 def test_list_skills(client: TestClient) -> None:
@@ -242,3 +254,60 @@ def test_clear_and_remember(client: TestClient) -> None:
 
     history_response = client.get("/api/history")
     assert history_response.status_code == 200
+
+
+def test_get_and_update_workflow(client: TestClient, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BLUESNAIL_CONFIG_DIR", str(tmp_path))
+    response = client.get("/api/workflow")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active_id"]
+    assert data["workflows"]
+
+    catalog = client.get("/api/workflow/catalog")
+    assert catalog.status_code == 200
+    assert catalog.json()["step_types"]
+
+    payload = data
+    payload["active_id"] = payload["workflows"][0]["id"]
+    payload["workflows"][0]["max_iterations"] = 7
+    update = client.put("/api/workflow", json=payload)
+    assert update.status_code == 200
+    assert update.json()["workflows"][0]["max_iterations"] == 7
+
+    invalid = client.put(
+        "/api/workflow",
+        json={"active_id": "nope", "workflows": payload["workflows"]},
+    )
+    assert invalid.status_code == 400
+
+
+def test_reset_workflow(client: TestClient, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BLUESNAIL_CONFIG_DIR", str(tmp_path))
+    reset = client.post("/api/workflow/reset")
+    assert reset.status_code == 200
+    data = reset.json()
+    assert data["active_id"] == "react"
+    assert any(item["id"] == "direct" for item in data["workflows"])
+
+
+def test_activate_workflow_by_id_or_name(client: TestClient, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BLUESNAIL_CONFIG_DIR", str(tmp_path))
+    reset = client.post("/api/workflow/reset")
+    assert reset.status_code == 200
+
+    by_name = client.put("/api/workflow/active", json={"ref": "直接回答"})
+    assert by_name.status_code == 200
+    assert by_name.json()["id"] == "direct"
+    assert by_name.json()["name"] == "直接回答"
+
+    by_id = client.put("/api/workflow/active", json={"ref": "react"})
+    assert by_id.status_code == 200
+    assert by_id.json()["id"] == "react"
+
+    active = client.get("/api/workflow/active")
+    assert active.status_code == 200
+    assert active.json()["id"] == "react"
+
+    missing = client.put("/api/workflow/active", json={"ref": "does-not-exist"})
+    assert missing.status_code == 400

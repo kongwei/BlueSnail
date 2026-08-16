@@ -79,6 +79,18 @@
         </section>
 
         <section class="panel">
+          <h2>当前流程</h2>
+          <label class="field">
+            <span>引用已编排的流程</span>
+            <select id="workflowSelect"></select>
+          </label>
+          <p id="workflowMeta" class="hint">按流程 ID 或名称选择。</p>
+          <a id="openWorkflowStudio" class="btn secondary workflow-link" href="/workflow">
+            打开流程编排
+          </a>
+        </section>
+
+        <section class="panel">
           <h2>会话</h2>
           <button id="clearBtn" class="btn secondary" type="button">清空对话</button>
           <p class="hint">请先配置 LLM 后再开始对话。</p>

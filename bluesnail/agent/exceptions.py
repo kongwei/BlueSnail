@@ -21,5 +21,9 @@ class SchedulerError(AgentError):
     """Raised when the scheduler encounters an unrecoverable error."""
 
 
+class WorkflowError(AgentError):
+    """Raised when a user-defined workflow is invalid or cannot run."""
+
+
 class SkillNotFoundError(AgentError):
     """Raised when a requested skill is not registered."""

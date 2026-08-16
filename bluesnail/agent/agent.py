@@ -10,6 +10,7 @@ from bluesnail.agent.scheduler import Scheduler, SchedulerConfig
 from bluesnail.agent.skills import SkillDefinition, SkillManager
 from bluesnail.agent.tools import ToolDefinition, ToolManager
 from bluesnail.agent.types import AgentResult
+from bluesnail.agent.workflow import Workflow
 
 
 @dataclass(slots=True)
@@ -17,6 +18,7 @@ class AgentConfig:
     system_prompt: str = "You are a helpful AI assistant."
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
+    workflow: Workflow | None = None
 
 
 class Agent:
@@ -65,6 +67,7 @@ class Agent:
             skills=self.skills,
             context=self.context,
             config=self.config.scheduler,
+            workflow=self.config.workflow,
         )
 
     def run(

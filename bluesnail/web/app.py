@@ -15,8 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from bluesnail.agent import Agent, AgentConfig, ToolManager
-from bluesnail.agent.exceptions import AgentError
+from bluesnail.agent.exceptions import AgentError, WorkflowError
 from bluesnail.agent.types import AgentResult, Message, Role
+from bluesnail.agent.workflow import WorkflowBundle, workflow_catalog
 from bluesnail.web.llm_config import (
     LLMConfig,
     apply_llm_config,
@@ -24,6 +25,7 @@ from bluesnail.web.llm_config import (
     load_config,
     save_config,
 )
+from bluesnail.web.workflow_config import apply_bundle, load_bundle, save_bundle
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -56,6 +58,15 @@ class LLMConfigUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, min_length=1, max_length=4000)
 
 
+class WorkflowBundleUpdate(BaseModel):
+    active_id: str = Field(min_length=1, max_length=80)
+    workflows: list[dict[str, Any]] = Field(min_length=1)
+
+
+class WorkflowActivateRequest(BaseModel):
+    ref: str = Field(min_length=1, max_length=80)
+
+
 class LLMTestRequest(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-4o-mini"
@@ -65,8 +76,17 @@ class LLMTestRequest(BaseModel):
 
 def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) -> FastAPI:
     app = FastAPI(title="BlueSnail Agent", version="0.1.0")
-    app.state.agent = agent or build_default_agent(llm_config)
     app.state.llm_config = llm_config or load_config()
+    if agent is None:
+        try:
+            workflow_bundle = load_bundle()
+        except WorkflowError:
+            workflow_bundle = None
+        agent = build_default_agent(app.state.llm_config, workflow_bundle)
+        app.state.workflow_bundle = workflow_bundle or _bundle_from_agent(agent)
+    else:
+        app.state.workflow_bundle = _bundle_from_agent(agent)
+    app.state.agent = agent
 
     app.add_middleware(
         CORSMiddleware,
@@ -79,6 +99,10 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/workflow")
+    async def workflow_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "workflow.html")
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
@@ -133,6 +157,67 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
             "reply": response.content,
             "model": test_config.model,
         }
+
+    @app.get("/api/workflow")
+    async def get_workflow() -> dict[str, Any]:
+        bundle: WorkflowBundle = app.state.workflow_bundle
+        payload = bundle.to_dict()
+        payload["summaries"] = bundle.summaries()
+        return payload
+
+    @app.get("/api/workflow/catalog")
+    async def get_workflow_catalog() -> dict[str, Any]:
+        return workflow_catalog()
+
+    @app.get("/api/workflow/active")
+    async def get_active_workflow() -> dict[str, Any]:
+        bundle: WorkflowBundle = app.state.workflow_bundle
+        active = bundle.active()
+        return {
+            "id": active.id,
+            "name": active.name,
+            "description": active.description,
+            "step_count": len(active.steps),
+        }
+
+    @app.put("/api/workflow/active")
+    async def activate_workflow(payload: WorkflowActivateRequest) -> dict[str, Any]:
+        bundle: WorkflowBundle = app.state.workflow_bundle
+        try:
+            selected = bundle.resolve(payload.ref)
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        bundle.active_id = selected.id
+        apply_bundle(_get_agent(app), bundle)
+        save_bundle(bundle)
+        app.state.workflow_bundle = bundle
+        return {
+            "id": selected.id,
+            "name": selected.name,
+            "description": selected.description,
+            "step_count": len(selected.steps),
+        }
+
+    @app.put("/api/workflow")
+    async def update_workflow(payload: WorkflowBundleUpdate) -> dict[str, Any]:
+        try:
+            bundle = WorkflowBundle.from_dict(payload.model_dump())
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        apply_bundle(_get_agent(app), bundle)
+        save_bundle(bundle)
+        app.state.workflow_bundle = bundle
+        return bundle.to_dict()
+
+    @app.post("/api/workflow/reset")
+    async def reset_workflow() -> dict[str, Any]:
+        from bluesnail.agent.workflow import default_bundle
+
+        bundle = default_bundle()
+        apply_bundle(_get_agent(app), bundle)
+        save_bundle(bundle)
+        app.state.workflow_bundle = bundle
+        return bundle.to_dict()
 
     @app.get("/api/tools")
     async def list_tools() -> dict[str, Any]:
@@ -352,16 +437,37 @@ def _format_sse(event_type: str, data: Any) -> str:
     return f"event: {event_type}\ndata: {payload}\n\n"
 
 
-def build_default_agent(llm_config: LLMConfig | None = None) -> Agent:
+def build_default_agent(
+    llm_config: LLMConfig | None = None,
+    workflow_bundle: WorkflowBundle | None = None,
+) -> Agent:
     from bluesnail.skills import create_default_skills
     from bluesnail.tools import create_default_tools
 
     config = llm_config or load_config()
+    workflow = None
+    if workflow_bundle is not None:
+        try:
+            workflow = workflow_bundle.active()
+        except WorkflowError:
+            workflow = None
     agent = Agent(
         llm=create_llm_provider(config),
         tools=create_default_tools(),
         skills=create_default_skills(),
-        config=AgentConfig(system_prompt=config.system_prompt),
+        config=AgentConfig(
+            system_prompt=config.system_prompt,
+            workflow=workflow,
+        ),
     )
     agent.remember("webui_hint", "WebUI prefers concise Chinese answers.")
     return agent
+
+
+def _bundle_from_agent(agent: Agent) -> WorkflowBundle:
+    from bluesnail.agent.workflow import default_bundle
+
+    workflow = agent.scheduler.workflow
+    if workflow is None:
+        return default_bundle()
+    return WorkflowBundle(active_id=workflow.id, workflows=[workflow])
