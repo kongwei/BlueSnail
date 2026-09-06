@@ -20,6 +20,7 @@ MODULES = [
     "service",
     "web",
     "tui",
+    "eval",
 ]
 
 
