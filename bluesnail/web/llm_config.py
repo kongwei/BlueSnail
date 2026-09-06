@@ -8,9 +8,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from bluesnail.agent import Agent
-from bluesnail.agent.llm import LLMProvider
-from bluesnail.agent.providers.openai_compatible import OpenAICompatibleProvider
+from bluesnail.integration import Agent
+from bluesnail.llm import LLMProvider
+from bluesnail.llm.openai_compatible import OpenAICompatibleProvider
 
 _DEFAULT_SYSTEM_PROMPT = (
     "You are BlueSnail, a helpful AI assistant with tool-use capabilities."

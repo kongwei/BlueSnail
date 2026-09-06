@@ -1,13 +1,31 @@
-"""Built-in Agent Skill packages for BlueSnail."""
+"""Skills module: package loader, manager, and built-in packages."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-from bluesnail.agent.skills import BUILTIN_SKILLS_DIR, SkillManager
+from bluesnail.skills.loader import AgentSkillPackage
+from bluesnail.skills.manager import (
+    ACTIVATE_SKILL_NAME,
+    BUILTIN_SKILLS_DIR,
+    RUN_SKILL_SCRIPT_NAME,
+    SkillDefinition,
+    SkillManager,
+    SkillRegistry,
+)
 
-__all__ = ["BUILTIN_SKILLS_DIR", "create_default_skills", "discover_skill_directories"]
+__all__ = [
+    "ACTIVATE_SKILL_NAME",
+    "BUILTIN_SKILLS_DIR",
+    "RUN_SKILL_SCRIPT_NAME",
+    "AgentSkillPackage",
+    "SkillDefinition",
+    "SkillManager",
+    "SkillRegistry",
+    "create_default_skills",
+    "discover_skill_directories",
+]
 
 
 def discover_skill_directories() -> list[Path]:

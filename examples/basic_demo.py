@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bluesnail.agent import (
+from bluesnail.integration import (
     ACTIVATE_SKILL_NAME,
     RUN_SKILL_SCRIPT_NAME,
     Agent,

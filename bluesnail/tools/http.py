@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from bluesnail.agent.tools import ToolManager
+from bluesnail.tools.manager import ToolManager
 from bluesnail.tools.http_content import extract_useful_content
 
 DEFAULT_TIMEOUT_SECONDS = 15
