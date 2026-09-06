@@ -10,6 +10,7 @@ from pathlib import Path
 from bluesnail.eval.dataset import load_instances, resolve_dataset_name
 from bluesnail.eval.harness import harness_command
 from bluesnail.eval.runner import default_agent_factory, run_evaluation
+from bluesnail.eval.show import show_main
 
 
 def str2bool(value: str | bool) -> bool:
@@ -133,6 +134,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"show", "view"}:
+        return show_main(argv[1:])
+    return _run_eval(argv)
+
+
+def _run_eval(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     report_dir = Path(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)

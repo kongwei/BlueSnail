@@ -96,3 +96,17 @@ def test_main_gold_local_dataset(tmp_path: Path, monkeypatch) -> None:
     assert recorded["cmd"][1:3] == ["-m", "swebench.harness.run_evaluation"]
     pred_idx = recorded["cmd"].index("--predictions_path")
     assert recorded["cmd"][pred_idx + 1] == "gold"
+
+
+def test_main_show_lists_runs(tmp_path: Path, capsys) -> None:
+    dataset = tmp_path / "data.jsonl"
+    dataset.write_text(
+        '{"instance_id": "demo__repo-1", "problem_statement": "fix", "patch": "diff --git a/a b/a\\n"}\n',
+        encoding="utf-8",
+    )
+    assert eval_cli.main(
+        ["-d", str(dataset), "--gold", "--run_id", "show-gold", "--report_dir", str(tmp_path)]
+    ) == 0
+    code = eval_cli.main(["show", "--list-runs", "--report_dir", str(tmp_path)])
+    assert code == 0
+    assert "show-gold" in capsys.readouterr().out
