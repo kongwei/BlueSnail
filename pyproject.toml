@@ -21,6 +21,7 @@ classifiers = [
 dev = ["pytest>=8.0", "httpx>=0.27"]
 web = ["fastapi>=0.115", "uvicorn[standard]>=0.32", "httpx>=0.27"]
 tui = ["httpx>=0.27", "textual>=8.2.8"]
+eval = ["datasets>=2.20"]
 
 [project.scripts]
 bluesnail = "bluesnail.web.server:main"

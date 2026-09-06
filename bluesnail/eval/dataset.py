@@ -114,11 +114,21 @@ def _load_huggingface_records(dataset_name: str, split: str) -> list[dict[str, A
         from datasets import load_dataset
     except ImportError as exc:
         raise ImportError(
-            "Remote SWE-bench datasets require the Hugging Face datasets package. "
-            "Install it, or pass -d /path/to/dataset.jsonl. "
-            f"Tried to load {dataset_name!r}."
+            "Loading remote SWE-bench datasets needs the Hugging Face `datasets` package.\n"
+            "Install eval extras, then retry:\n"
+            "  pip install -e \".[eval]\"\n"
+            "  pip install datasets\n"
+            "Or pass a local file: -d /path/to/dataset.jsonl\n"
+            f"Tried to load {dataset_name!r} split={split!r}."
         ) from exc
-    dataset = load_dataset(dataset_name, split=split)
+    try:
+        dataset = load_dataset(dataset_name, split=split)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to download {dataset_name!r} (split={split!r}) from Hugging Face.\n"
+            "Check network access to huggingface.co. "
+            "If the dataset is gated, run `huggingface-cli login` first."
+        ) from exc
     return [dict(row) for row in dataset]
 
 

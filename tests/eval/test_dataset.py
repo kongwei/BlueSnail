@@ -34,3 +34,18 @@ def test_unknown_instance_ids_raise(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="Unknown instance_ids"):
         load_instances(str(path), instance_ids=["missing"])
+
+
+def test_missing_datasets_package_explains_install(monkeypatch) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "datasets" or name.startswith("datasets."):
+            raise ImportError("No module named datasets")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ImportError, match=r'pip install -e "\.\[eval\]"'):
+        load_instances("SWE-bench/SWE-bench_Verified")
