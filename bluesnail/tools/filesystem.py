@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from bluesnail.agent.tools import ToolManager
+from bluesnail.tools.manager import ToolManager
 
 MAX_READ_BYTES = 1_048_576
 MAX_WRITE_BYTES = 1_048_576

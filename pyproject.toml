@@ -22,10 +22,16 @@ dev = ["pytest>=8.0", "httpx>=0.27"]
 web = ["fastapi>=0.115", "uvicorn[standard]>=0.32", "httpx>=0.27"]
 
 [project.scripts]
-bluesnail-web = "bluesnail.web.server:main"
+bluesnail = "bluesnail.web.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["bluesnail"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"bluesnail/skills/packages" = "bluesnail/skills/packages"
+"bluesnail/web/static" = "bluesnail/web/static"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

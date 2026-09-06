@@ -14,10 +14,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from bluesnail.agent import Agent, AgentConfig, ToolManager
-from bluesnail.agent.exceptions import AgentError, WorkflowError
-from bluesnail.agent.types import AgentResult, Message, Role
-from bluesnail.agent.workflow import WorkflowBundle, workflow_catalog
+from bluesnail.integration import Agent, AgentConfig
+from bluesnail.tools import ToolManager
+from bluesnail.core.exceptions import AgentError, WorkflowError
+from bluesnail.core.types import AgentResult, Message, Role
+from bluesnail.workflow import WorkflowBundle, workflow_catalog
 from bluesnail.web.llm_config import (
     LLMConfig,
     apply_llm_config,
@@ -211,7 +212,7 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
 
     @app.post("/api/workflow/reset")
     async def reset_workflow() -> dict[str, Any]:
-        from bluesnail.agent.workflow import default_bundle
+        from bluesnail.workflow import default_bundle
 
         bundle = default_bundle()
         apply_bundle(_get_agent(app), bundle)
@@ -465,7 +466,7 @@ def build_default_agent(
 
 
 def _bundle_from_agent(agent: Agent) -> WorkflowBundle:
-    from bluesnail.agent.workflow import default_bundle
+    from bluesnail.workflow import default_bundle
 
     workflow = agent.scheduler.workflow
     if workflow is None:

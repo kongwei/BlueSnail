@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from bluesnail.agent.exceptions import WorkflowError
-from bluesnail.agent.workflow import Workflow, WorkflowBundle, default_bundle
+from bluesnail.core.exceptions import WorkflowError
+from bluesnail.workflow import Workflow, WorkflowBundle, default_bundle
 
 
 def config_path() -> Path:

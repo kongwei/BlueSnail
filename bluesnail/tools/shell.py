@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from bluesnail.agent.tools import ToolManager
+from bluesnail.tools.manager import ToolManager
 from bluesnail.tools.filesystem import resolve_path, resolve_workspace_root
 
 DEFAULT_TIMEOUT_SECONDS = 60
