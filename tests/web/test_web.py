@@ -215,10 +215,15 @@ def test_chat_stream(client: TestClient) -> None:
 
     event_types = [event_type for event_type, _ in events]
     assert "start" in event_types
+    assert "workflow" in event_types
     assert "step" in event_types
     assert "done" in event_types
     assert event_types.index("start") < event_types.index("step")
     assert event_types.index("step") < event_types.index("done")
+
+    workflow_events = [data for event_type, data in events if event_type == "workflow"]
+    assert any(item["phase"] == "before" for item in workflow_events)
+    assert any(item["step_type"] == "llm" and item["phase"] == "after" for item in workflow_events)
 
     step_events = [data for event_type, data in events if event_type == "step"]
     assert len(step_events) >= 2

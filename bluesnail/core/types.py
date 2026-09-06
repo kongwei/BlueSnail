@@ -84,6 +84,28 @@ class AgentResult:
 
 
 @dataclass(slots=True)
+class WorkflowEvent:
+    """One before/after observation of a workflow node during a run."""
+
+    phase: str
+    step_id: str
+    step_type: str
+    sequence: int
+    outcome: str | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "phase": self.phase,
+            "step_id": self.step_id,
+            "step_type": self.step_type,
+            "sequence": self.sequence,
+            "outcome": self.outcome,
+            "payload": self.payload,
+        }
+
+
+@dataclass(slots=True)
 class MemoryEntry:
     key: str
     content: str

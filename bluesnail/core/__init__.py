@@ -19,6 +19,7 @@ from bluesnail.core.types import (
     SkillResult,
     ToolCall,
     ToolResult,
+    WorkflowEvent,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "ToolNotFoundError",
     "ToolResult",
     "WorkflowError",
+    "WorkflowEvent",
 ]

@@ -13,7 +13,9 @@ MODULES = [
     "workflow",
     "scheduler",
     "integration",
+    "service",
     "web",
+    "tui",
 ]
 
 

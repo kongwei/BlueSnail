@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -23,6 +22,15 @@ from bluesnail.core.types import (
     SkillResult,
     ToolCall,
     ToolResult,
+    WorkflowEvent,
+)
+from bluesnail.scheduler.hooks import (
+    RunHook,
+    RunHooks,
+    RunStartHook,
+    StepHook,
+    WorkflowHook,
+    compose_hooks,
 )
 from bluesnail.workflow import Workflow, WorkflowStep, default_react_workflow
 
@@ -32,11 +40,6 @@ class SchedulerConfig:
     max_iterations: int = 50
     auto_recall: bool = True
     recall_top_k: int = 3
-
-
-StepHook = Callable[[AgentStep], None]
-RunHook = Callable[[AgentResult], None]
-RunStartHook = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -55,6 +58,7 @@ class _RunState:
     llm_calls: int = 0
     user_ingested: bool = False
     start_emitted: bool = False
+    hop_index: int = 0
     run_context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -72,6 +76,7 @@ class Scheduler:
     on_step: StepHook | None = None
     on_complete: RunHook | None = None
     on_run_start: RunStartHook | None = None
+    on_workflow: WorkflowHook | None = None
 
     def __post_init__(self) -> None:
         if self.workflow is None:
@@ -91,6 +96,8 @@ class Scheduler:
         on_run_start: RunStartHook | None = None,
         on_step: StepHook | None = None,
         on_complete: RunHook | None = None,
+        on_workflow: WorkflowHook | None = None,
+        hooks: RunHooks | None = None,
     ) -> AgentResult:
         if not user_input.strip():
             raise SchedulerError("User input cannot be empty.")
@@ -101,9 +108,16 @@ class Scheduler:
             recall_top_k=self.config.recall_top_k,
         )
 
-        step_hook = on_step if on_step is not None else self.on_step
-        complete_hook = on_complete if on_complete is not None else self.on_complete
-        run_start_hook = on_run_start if on_run_start is not None else self.on_run_start
+        resolved = RunHooks(
+            on_run_start=compose_hooks(self.on_run_start, on_run_start),
+            on_workflow=compose_hooks(self.on_workflow, on_workflow),
+            on_step=compose_hooks(self.on_step, on_step),
+            on_complete=compose_hooks(self.on_complete, on_complete),
+        ).merge(hooks)
+        step_hook = resolved.on_step
+        complete_hook = resolved.on_complete
+        run_start_hook = resolved.on_run_start
+        workflow_hook = resolved.on_workflow
 
         state = _RunState(
             user_input=user_input.strip(),
@@ -139,6 +153,7 @@ class Scheduler:
                 workflow=workflow,
                 step_hook=step_hook,
                 run_start_hook=run_start_hook,
+                workflow_hook=workflow_hook,
             )
 
         if not state.final_answer and state.stopped_reason != "completed":
@@ -175,6 +190,7 @@ class Scheduler:
         workflow: Workflow,
         step_hook: StepHook | None,
         run_start_hook: RunStartHook | None,
+        workflow_hook: WorkflowHook | None,
     ) -> str | None:
         handler = {
             "ingest_user": self._step_ingest_user,
@@ -188,6 +204,18 @@ class Scheduler:
         }.get(step.type)
         if handler is None:
             raise WorkflowError(f"Unsupported step type: {step.type}")
+        state.hop_index += 1
+        sequence = state.hop_index
+        if workflow_hook:
+            workflow_hook(
+                WorkflowEvent(
+                    phase="before",
+                    step_id=step.id,
+                    step_type=step.type,
+                    sequence=sequence,
+                    payload=self._workflow_payload(step, state),
+                )
+            )
         outcome = handler(
             step,
             state=state,
@@ -195,6 +223,17 @@ class Scheduler:
             step_hook=step_hook,
             run_start_hook=run_start_hook,
         )
+        if workflow_hook:
+            workflow_hook(
+                WorkflowEvent(
+                    phase="after",
+                    step_id=step.id,
+                    step_type=step.type,
+                    sequence=sequence,
+                    outcome=outcome,
+                    payload=self._workflow_payload(step, state, outcome=outcome),
+                )
+            )
         state.run_context.setdefault("workflow_trace", []).append(
             {"id": step.id, "type": step.type, "outcome": outcome}
         )
@@ -413,6 +452,69 @@ class Scheduler:
             raise SchedulerError(str(exc)) from exc
         state.llm_messages = self.context.to_llm_messages(window)
         self._refresh_run_context(state)
+
+    def _workflow_payload(
+        self,
+        step: WorkflowStep,
+        state: _RunState,
+        *,
+        outcome: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "params": dict(step.params),
+            "user_input": state.user_input,
+            "llm_calls": state.llm_calls,
+            "message_count": len(state.llm_messages),
+            "final_answer": state.final_answer,
+            "stopped_reason": state.stopped_reason,
+            "recall_context": state.recall_context,
+            "skill_context": state.skill_context,
+            "extra_context": state.extra_context,
+        }
+        if outcome is not None:
+            payload["outcome"] = outcome
+        view = self._latest_llm_view(state)
+        if view:
+            payload["llm"] = view
+        return payload
+
+    def _latest_llm_view(self, state: _RunState) -> dict[str, Any] | None:
+        agent_step = state.pending_step
+        if agent_step is None and state.steps:
+            agent_step = state.steps[-1]
+        if agent_step is None:
+            return None
+        return {
+            "iteration": agent_step.iteration,
+            "content": agent_step.response.content,
+            "finish_reason": agent_step.response.finish_reason,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                }
+                for call in agent_step.response.tool_calls
+            ],
+            "tool_results": [
+                {
+                    "tool_call_id": item.tool_call_id,
+                    "name": item.name,
+                    "content": item.content,
+                    "is_error": item.is_error,
+                }
+                for item in agent_step.tool_results
+            ],
+            "skill_results": [
+                {
+                    "skill_call_id": item.skill_call_id,
+                    "name": item.name,
+                    "content": item.content,
+                    "is_error": item.is_error,
+                }
+                for item in agent_step.skill_results
+            ],
+        }
 
     def _maybe_emit_start(self, state: _RunState, run_start_hook: RunStartHook | None) -> None:
         if state.start_emitted:

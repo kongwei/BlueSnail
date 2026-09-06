@@ -27,6 +27,8 @@ from bluesnail.web.llm_config import (
     save_config,
 )
 from bluesnail.web.workflow_config import apply_bundle, load_bundle, save_bundle
+from bluesnail.service import AgentService, serialize_result as serialize_result_dict
+from bluesnail.service.serialize import serialize_message, serialize_step
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -278,22 +280,11 @@ def create_app(agent: Agent | None = None, llm_config: LLMConfig | None = None) 
 
             def run_agent() -> None:
                 try:
-                    current.run(
+                    AgentService(current).run_with_emitter(
                         payload.message.strip(),
+                        emit,
                         session_id=payload.session_id,
                         extra_context=payload.extra_context,
-                        on_run_start=lambda ctx: emit(
-                            "start",
-                            {
-                                "run_context": ctx,
-                                "user_input": payload.message.strip(),
-                            },
-                        ),
-                        on_step=lambda step: emit("step", _serialize_step(step)),
-                        on_complete=lambda result: emit(
-                            "done",
-                            _chat_response_to_dict(_serialize_result(result)),
-                        ),
                     )
                 except AgentError as exc:
                     emit("error", {"detail": str(exc), "status_code": 400})
@@ -354,77 +345,15 @@ def _get_agent(app: FastAPI) -> Agent:
 
 
 def _serialize_message(message: Message) -> dict[str, Any]:
-    return {
-        "role": message.role.value,
-        "content": message.content,
-        "name": message.name,
-        "tool_call_id": message.tool_call_id,
-        "metadata": message.metadata,
-        "timestamp": message.timestamp.isoformat(),
-    }
+    return serialize_message(message)
 
 
 def _serialize_step(step) -> dict[str, Any]:
-    return {
-        "iteration": step.iteration,
-        "content": step.response.content,
-        "finish_reason": step.response.finish_reason,
-        "tool_calls": [
-            {
-                "id": call.id,
-                "name": call.name,
-                "arguments": call.arguments,
-            }
-            for call in step.response.tool_calls
-        ],
-        "tool_results": [
-            {
-                "tool_call_id": item.tool_call_id,
-                "name": item.name,
-                "content": item.content,
-                "is_error": item.is_error,
-            }
-            for item in step.tool_results
-        ],
-        "skill_results": [
-            {
-                "skill_call_id": item.skill_call_id,
-                "name": item.name,
-                "content": item.content,
-                "is_error": item.is_error,
-            }
-            for item in step.skill_results
-        ],
-        "input_messages": [
-            _serialize_message(message) for message in step.input_messages
-        ],
-    }
+    return serialize_step(step)
 
 
 def _serialize_result(result: AgentResult) -> ChatResponse:
-    steps = [_serialize_step(step) for step in result.steps]
-
-    visible_messages = [
-        _serialize_message(message)
-        for message in result.messages
-        if message.role in {Role.USER, Role.ASSISTANT, Role.TOOL}
-    ]
-
-    reasoning = {
-        "run_context": result.run_context,
-        "steps": steps,
-        "iterations": result.iterations,
-        "stopped_reason": result.stopped_reason,
-    }
-
-    return ChatResponse(
-        answer=result.answer,
-        iterations=result.iterations,
-        stopped_reason=result.stopped_reason,
-        steps=steps,
-        messages=visible_messages,
-        reasoning=reasoning,
-    )
+    return ChatResponse(**serialize_result_dict(result))
 
 
 def _chat_response_to_dict(response: ChatResponse) -> dict[str, Any]:

@@ -79,6 +79,8 @@ class Agent:
         on_run_start=None,
         on_step=None,
         on_complete=None,
+        on_workflow=None,
+        hooks=None,
     ) -> AgentResult:
         return self.scheduler.run(
             user_input,
@@ -88,6 +90,8 @@ class Agent:
             on_run_start=on_run_start,
             on_step=on_step,
             on_complete=on_complete,
+            on_workflow=on_workflow,
+            hooks=hooks,
         )
 
     def remember(self, key: str, content: str, metadata: dict | None = None) -> None:
