@@ -20,7 +20,7 @@ Modular AI Agent framework. Each Agent capability lives in its own package; `blu
 ## Install
 
 ```bash
-pip install -e ".[dev,web]"
+pip install -e ".[dev,web,tui]"
 ```
 
 ## Test
@@ -44,6 +44,6 @@ python scripts/guard.py
 ## Run
 
 ```bash
-python examples/basic_demo.py
-bluesnail-web
+bluesnail
+bluesnail-tui --url http://127.0.0.1:7860
 ```
